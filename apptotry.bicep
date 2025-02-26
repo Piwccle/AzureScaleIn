@@ -1,9 +1,8 @@
-param location string = resourceGroup().location
-param adminUsername string = 'azureuser'
+var location = resourceGroup().location
+param adminUsername string = 'sergio'
 @secure()
-param sshkey string  
+param sshkey string
 param vmSize string = 'Standard_B2s'
-
 
 resource vmVnet 'Microsoft.Network/virtualNetworks@2021-02-01' = {
   name: 'myVnet'
@@ -149,8 +148,11 @@ var base64jsonForProtectionScaleIn = base64(jsonForProtectionScaleIn)
 var userDataParams = {
   base64nodescript: base64nodescript
   base64jsonForProtectionScaleIn: base64jsonForProtectionScaleIn
+  subscriptionId: subscription().subscriptionId
+  resourceGroupName: resourceGroup().name
+  vmScaleSetName: 'myScaleSet'
+  resourceManager: environment().resourceManager
 }
-
 
 var userdataTemplate = '''
 #!/bin/bash -x
@@ -164,9 +166,11 @@ chmod +x /usr/local/bin/app.js
 echo ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json
 
 apt-get update && apt-get install -y 
+apt install unzip && apt install stress-ng
 
 # Install Node.js
 curl -o- https://fnm.vercel.app/install | bash
+source /root/.bashrc
 fnm install 22
 
 # Install azure cli
@@ -174,9 +178,17 @@ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
 az login --identity --allow-no-subscriptions
 
+BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
+INSTANCE_ID = $(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
+
+SUBSCRIPTION_ID=${subscriptionId}
+RESOURCE_GROUP_NAME=${resourceGroupName}
+VM_SCALE_SET_NAME=${vmScaleSetName}
+RESOURCE_MANAGER=${resourceManager}
+
 # Make a PUT request to the Azure REST API to update the VM instance with protection policy
 curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)" \
-"${environment().resourceManager}/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmScaleSetName}/virtualMachines/{instance-id}?api-version=2019-03-01" \
+"$RESOURCE_MANAGER/subscriptions/SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01" \
 -d @/usr/local/bin/jsonForProtectionScaleIn.json
 
 export HOME="/root"
@@ -190,7 +202,6 @@ var userData = reduce(
   { value: userdataTemplate },
   (curr, next) => { value: replace(curr.value, '\${${next.key}}', next.value) }
 ).value
-
 
 var base64userdata = base64(userData)
 
@@ -245,6 +256,7 @@ resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@20
       }
       osProfile: {
         computerNamePrefix: mediaNodeVMSettings.vmName
+        adminUsername: adminUsername
         adminPassword: sshkey
         linuxConfiguration: mediaNodeVMSettings.linuxConfiguration
       }
@@ -277,7 +289,7 @@ resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@20
           }
         ]
       }
-    userData: base64userdata
+      userData: base64userdata
     }
   }
 }
@@ -339,55 +351,5 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
     ]
     enabled: true
     targetResourceUri: openviduScaleSetMediaNode.id
-  }
-}
-
-
-resource functionApp 'Microsoft.Web/sites@2021-02-01' = {
-  name: 'myFunctionApp'
-  location: location
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    serverFarmId: 'myAppServicePlan'
-    siteConfig: {
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=yourstorageaccount;AccountKey=yourstorageaccountkey;EndpointSuffix=core.windows.net'
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~3'
-        }
-        {
-          name: 'WEBSITE_NODE_DEFAULT_VERSION'
-          value: '~14'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'node'
-        }
-      ]
-    }
-  }
-}
-
-resource eventGridSubscription 'Microsoft.EventGrid/eventSubscriptions@2021-06-01-preview' = {
-  name: 'myEventGridSubscription'
-  scope: tenant()
-  properties: {
-    destination: {
-      endpointType: 'AzureFunction'
-      properties: {
-        resourceId: functionApp.id
-      }
-    }
-    filter: {
-      includedEventTypes: [
-        'Microsoft.Compute/virtualMachineScaleSets/vm/scaleIn/action'
-      ]
-    }
   }
 }

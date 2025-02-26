@@ -5,17 +5,13 @@
     "_generator": {
       "name": "bicep",
       "version": "0.33.93.31351",
-      "templateHash": "3403191620651153442"
+      "templateHash": "2519647878678528323"
     }
   },
   "parameters": {
-    "location": {
-      "type": "string",
-      "defaultValue": "[resourceGroup().location]"
-    },
     "adminUsername": {
       "type": "string",
-      "defaultValue": "azureuser"
+      "defaultValue": "sergio"
     },
     "sshkey": {
       "type": "securestring"
@@ -26,15 +22,19 @@
     }
   },
   "variables": {
-    "nodescript": "const express = require('express');\r\nconst os = require('os');\r\nconst app = express();\r\nconst port = 3000;\r\n\r\napp.get('/', (req, res) => {\r\n    const localIP = getLocalIP();\r\n    res.send(`\r\n        <html>\r\n            <body>\r\n                <h1>Node.js App</h1>\r\n                <p>IP Address: ${localIP}</p>\r\n                <button onclick=\"fetch('/shutdown', { method: 'POST' })\">Shutdown</button>\r\n            </body>\r\n        </html>\r\n    `);\r\n});\r\n\r\napp.post('/shutdown', (req, res) => {\r\n    res.send('Shutting down...');\r\n    process.exit();\r\n});\r\n\r\nfunction getLocalIP() {\r\n    const interfaces = os.networkInterfaces();\r\n    for (const name of Object.keys(interfaces)) {\r\n        for (const iface of interfaces[name]) {\r\n            if (iface.family === 'IPv4' && !iface.internal) {\r\n                return iface.address;\r\n            }\r\n        }\r\n    }\r\n    return '127.0.0.1';\r\n}\r\n\r\napp.listen(port, () => {\r\n    const localIP = getLocalIP();\r\n    console.log(`App listening at http://${localIP}:${port}`);\r\n}); \r\n",
+    "location": "[resourceGroup().location]",
+    "nodescript": "const express = require('express');\nconst os = require('os');\nconst app = express();\nconst port = 3000;\n\napp.get('/', (req, res) => {\n    const localIP = getLocalIP();\n    res.send(`\n        <html>\n            <body>\n                <h1>Node.js App</h1>\n                <p>IP Address: ${localIP}</p>\n                <button onclick=\"fetch('/shutdown', { method: 'POST' })\">Shutdown</button>\n            </body>\n        </html>\n    `);\n});\n\napp.post('/shutdown', (req, res) => {\n    res.send('Shutting down...');\n    process.exit();\n});\n\nfunction getLocalIP() {\n    const interfaces = os.networkInterfaces();\n    for (const name of Object.keys(interfaces)) {\n        for (const iface of interfaces[name]) {\n            if (iface.family === 'IPv4' && !iface.internal) {\n                return iface.address;\n            }\n        }\n    }\n    return '127.0.0.1';\n}\n\napp.listen(port, () => {\n    const localIP = getLocalIP();\n    console.log(`App listening at http://${localIP}:${port}`);\n}); \n",
     "base64nodescript": "[base64(variables('nodescript'))]",
-    "jsonForProtectionScaleIn": "  {\r\n    \"properties\": {\r\n      \"protectionPolicy\": {\r\n        \"protectFromScaleIn\": true\r\n      }\r\n    }        \r\n  }\r\n",
+    "jsonForProtectionScaleIn": "  {\n    \"properties\": {\n      \"protectionPolicy\": {\n        \"protectFromScaleIn\": true\n      }\n    }        \n  }\n",
     "base64jsonForProtectionScaleIn": "[base64(variables('jsonForProtectionScaleIn'))]",
     "userDataParams": {
       "base64nodescript": "[variables('base64nodescript')]",
-      "base64jsonForProtectionScaleIn": "[variables('base64jsonForProtectionScaleIn')]"
+      "base64jsonForProtectionScaleIn": "[variables('base64jsonForProtectionScaleIn')]",
+      "subscriptionId": "[subscription().subscriptionId]",
+      "resourceGroupName": "[resourceGroup().name]",
+      "vmScaleSetName": "myScaleSet"
     },
-    "userdataTemplate": "#!/bin/bash -x\r\nset -eu -o pipefail\r\n\r\n# Introduce the scripts in the instance\r\n# app.js\r\necho ${base64nodescript} | base64 -d > /usr/local/bin/app.js\r\nchmod +x /usr/local/bin/app.js\r\n\r\necho ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json\r\n\r\napt-get update && apt-get install -y \r\n\r\n# Install Node.js\r\ncurl -o- https://fnm.vercel.app/install | bash\r\nfnm install 22\r\n\r\n# Install azure cli\r\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\r\n\r\naz login --identity --allow-no-subscriptions\r\n\r\n# Make a PUT request to the Azure REST API to update the VM instance with protection policy\r\ncurl -X PUT -H \"Content-Type: application/json\" -H \"Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)\" \\\r\n\"${environment().resourceManager}/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmScaleSetName}/virtualMachines/{instance-id}?api-version=2019-03-01\" \\\r\n-d @/usr/local/bin/jsonForProtectionScaleIn.json\r\n\r\nexport HOME=\"/root\"\r\n\r\n#start nodeapp\r\nnode /usr/local/bin/app.js\r\n",
+    "userdataTemplate": "#!/bin/bash -x\nset -eu -o pipefail\n\n# Introduce the scripts in the instance\n# app.js\necho ${base64nodescript} | base64 -d > /usr/local/bin/app.js\nchmod +x /usr/local/bin/app.js\n\necho ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json\n\napt-get update && apt-get install -y \napt install unzip && apt install stress-ng\n\n# Install Node.js\ncurl -o- https://fnm.vercel.app/install | bash\nsource /root/.bashrc\nfnm install 22\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\naz login --identity --allow-no-subscriptions\n\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID = $(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\nSUBSCRIPTION_ID=${subscriptionId}\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\n\n# Make a PUT request to the Azure REST API to update the VM instance with protection policy\ncurl -X PUT -H \"Content-Type: application/json\" -H \"Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)\" \\\n\"${environment().resourceManager}/subscriptions/SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01\" \\\n-d @/usr/local/bin/jsonForProtectionScaleIn.json\n\nexport HOME=\"/root\"\n\n#start nodeapp\nnode /usr/local/bin/app.js\n",
     "userData": "[reduce(items(variables('userDataParams')), createObject('value', variables('userdataTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
     "base64userdata": "[base64(variables('userData'))]",
     "mediaNodeVMSettings": {
@@ -64,7 +64,7 @@
       "type": "Microsoft.Network/virtualNetworks",
       "apiVersion": "2021-02-01",
       "name": "myVnet",
-      "location": "[parameters('location')]",
+      "location": "[variables('location')]",
       "properties": {
         "addressSpace": {
           "addressPrefixes": [
@@ -85,7 +85,7 @@
       "type": "Microsoft.Network/networkInterfaces",
       "apiVersion": "2021-02-01",
       "name": "myNic",
-      "location": "[parameters('location')]",
+      "location": "[variables('location')]",
       "properties": {
         "ipConfigurations": [
           {
@@ -107,7 +107,7 @@
       "type": "Microsoft.Network/networkSecurityGroups",
       "apiVersion": "2021-02-01",
       "name": "myNSG",
-      "location": "[parameters('location')]",
+      "location": "[variables('location')]",
       "properties": {
         "securityRules": [
           {
@@ -156,7 +156,7 @@
       "type": "Microsoft.Compute/virtualMachineScaleSets",
       "apiVersion": "2024-07-01",
       "name": "myScaleSet",
-      "location": "[parameters('location')]",
+      "location": "[variables('location')]",
       "identity": {
         "type": "SystemAssigned"
       },
@@ -185,6 +185,7 @@
           },
           "osProfile": {
             "computerNamePrefix": "[variables('mediaNodeVMSettings').vmName]",
+            "adminUsername": "[parameters('adminUsername')]",
             "adminPassword": "[parameters('sshkey')]",
             "linuxConfiguration": "[variables('mediaNodeVMSettings').linuxConfiguration]"
           },
@@ -286,60 +287,6 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Compute/virtualMachineScaleSets', 'myScaleSet')]"
-      ]
-    },
-    {
-      "type": "Microsoft.Web/sites",
-      "apiVersion": "2021-02-01",
-      "name": "myFunctionApp",
-      "location": "[parameters('location')]",
-      "identity": {
-        "type": "SystemAssigned"
-      },
-      "properties": {
-        "serverFarmId": "myAppServicePlan",
-        "siteConfig": {
-          "appSettings": [
-            {
-              "name": "AzureWebJobsStorage",
-              "value": "DefaultEndpointsProtocol=https;AccountName=yourstorageaccount;AccountKey=yourstorageaccountkey;EndpointSuffix=core.windows.net"
-            },
-            {
-              "name": "FUNCTIONS_EXTENSION_VERSION",
-              "value": "~3"
-            },
-            {
-              "name": "WEBSITE_NODE_DEFAULT_VERSION",
-              "value": "~14"
-            },
-            {
-              "name": "FUNCTIONS_WORKER_RUNTIME",
-              "value": "node"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "type": "Microsoft.EventGrid/eventSubscriptions",
-      "apiVersion": "2021-06-01-preview",
-      "scope": "/",
-      "name": "myEventGridSubscription",
-      "properties": {
-        "destination": {
-          "endpointType": "AzureFunction",
-          "properties": {
-            "resourceId": "[resourceId('Microsoft.Web/sites', 'myFunctionApp')]"
-          }
-        },
-        "filter": {
-          "includedEventTypes": [
-            "Microsoft.Compute/virtualMachineScaleSets/vm/scaleIn/action"
-          ]
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', 'myFunctionApp')]"
       ]
     }
   ]
