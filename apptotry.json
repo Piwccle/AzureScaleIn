@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.33.93.31351",
-      "templateHash": "2519647878678528323"
+      "templateHash": "12332646952893163108"
     }
   },
   "parameters": {
@@ -32,9 +32,10 @@
       "base64jsonForProtectionScaleIn": "[variables('base64jsonForProtectionScaleIn')]",
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
-      "vmScaleSetName": "myScaleSet"
+      "vmScaleSetName": "myScaleSet",
+      "resourceManager": "[environment().resourceManager]"
     },
-    "userdataTemplate": "#!/bin/bash -x\nset -eu -o pipefail\n\n# Introduce the scripts in the instance\n# app.js\necho ${base64nodescript} | base64 -d > /usr/local/bin/app.js\nchmod +x /usr/local/bin/app.js\n\necho ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json\n\napt-get update && apt-get install -y \napt install unzip && apt install stress-ng\n\n# Install Node.js\ncurl -o- https://fnm.vercel.app/install | bash\nsource /root/.bashrc\nfnm install 22\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\naz login --identity --allow-no-subscriptions\n\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID = $(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\nSUBSCRIPTION_ID=${subscriptionId}\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\n\n# Make a PUT request to the Azure REST API to update the VM instance with protection policy\ncurl -X PUT -H \"Content-Type: application/json\" -H \"Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)\" \\\n\"${environment().resourceManager}/subscriptions/SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01\" \\\n-d @/usr/local/bin/jsonForProtectionScaleIn.json\n\nexport HOME=\"/root\"\n\n#start nodeapp\nnode /usr/local/bin/app.js\n",
+    "userdataTemplate": "#!/bin/bash -x\nset -eu -o pipefail\n\n# Introduce the scripts in the instance\n# app.js\necho ${base64nodescript} | base64 -d > /usr/local/bin/app.js\nchmod +x /usr/local/bin/app.js\n\necho ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json\n\napt-get update && apt-get install -y \napt-get install -y unzip && apt-get install -y stress-ng && apt-get install -y jq\n\n\n# Install Node.js\napt install -y nodejs && apt install -y npm\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\naz login --identity --allow-no-subscriptions\n\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\nSUBSCRIPTION_ID=${subscriptionId}\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nRESOURCE_MANAGER=${resourceManager}\n\n# Make a PUT request to the Azure REST API to update the VM instance with protection policy\ncurl -X PUT -H \"Content-Type: application/json\" -H \"Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)\" \\\n\"$RESOURCE_MANAGER/subscriptions/SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01\" \\\n-d @/usr/local/bin/jsonForProtectionScaleIn.json\n\nexport HOME=\"/root\"\n\n#start nodeapp\nnpm install express\nnode /usr/local/bin/app.js\n",
     "userData": "[reduce(items(variables('userDataParams')), createObject('value', variables('userdataTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
     "base64userdata": "[base64(variables('userData'))]",
     "mediaNodeVMSettings": {

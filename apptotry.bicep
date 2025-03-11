@@ -166,12 +166,11 @@ chmod +x /usr/local/bin/app.js
 echo ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json
 
 apt-get update && apt-get install -y 
-apt install unzip && apt install stress-ng
+apt-get install -y unzip && apt-get install -y stress-ng && apt-get install -y jq
+
 
 # Install Node.js
-curl -o- https://fnm.vercel.app/install | bash
-source /root/.bashrc
-fnm install 22
+apt install -y nodejs && apt install -y npm
 
 # Install azure cli
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
@@ -179,7 +178,7 @@ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 az login --identity --allow-no-subscriptions
 
 BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
-INSTANCE_ID = $(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
+INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
 
 SUBSCRIPTION_ID=${subscriptionId}
 RESOURCE_GROUP_NAME=${resourceGroupName}
@@ -194,6 +193,7 @@ curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $(az a
 export HOME="/root"
 
 #start nodeapp
+npm install express
 node /usr/local/bin/app.js
 '''
 
