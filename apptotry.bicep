@@ -4,6 +4,8 @@ param adminUsername string = 'sergio'
 param sshkey string
 param vmSize string = 'Standard_B2s'
 
+//var deploymentUser = az.deployer().objectId
+
 resource vmVnet 'Microsoft.Network/virtualNetworks@2021-02-01' = {
   name: 'myVnet'
   location: location
@@ -145,6 +147,9 @@ var jsonForProtectionScaleIn = '''
 '''
 var base64jsonForProtectionScaleIn = base64(jsonForProtectionScaleIn)
 
+var subscriptionId = subscription().subscriptionId
+var resourceGroupName = resourceGroup().name
+
 var userDataParams = {
   base64nodescript: base64nodescript
   base64jsonForProtectionScaleIn: base64jsonForProtectionScaleIn
@@ -152,6 +157,7 @@ var userDataParams = {
   resourceGroupName: resourceGroup().name
   vmScaleSetName: 'myScaleSet'
   resourceManager: environment().resourceManager
+  identityId: '/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myUserAssignedIdentity'
 }
 
 var userdataTemplate = '''
@@ -175,7 +181,8 @@ apt install -y nodejs && apt install -y npm
 # Install azure cli
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
-az login --identity --allow-no-subscriptions
+$IDENTITY_ID=${identityId}
+az login --identity -u $IDENTITY_ID
 
 BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
 INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
@@ -186,13 +193,16 @@ VM_SCALE_SET_NAME=${vmScaleSetName}
 RESOURCE_MANAGER=${resourceManager}
 
 # Make a PUT request to the Azure REST API to update the VM instance with protection policy
-curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)" \
-"$RESOURCE_MANAGER/subscriptions/SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01" \
--d @/usr/local/bin/jsonForProtectionScaleIn.json
+#curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)" \
+#"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01" \
+#-d @/usr/local/bin/jsonForProtectionScaleIn.json
 
-export HOME="/root"
+az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true
+
+export HOME=/home/sergio
 
 #start nodeapp
+cd /usr/local/bin
 npm install express
 node /usr/local/bin/app.js
 '''
@@ -227,10 +237,20 @@ var mediaNodeVMSettings = {
   }
 }
 
+resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'myUserAssignedIdentity'
+  location: location
+}
+
 resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@2024-07-01' = {
   name: 'myScaleSet'
   location: location
-  identity: { type: 'SystemAssigned' }
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentity.id}': {}
+    }
+  }
   sku: {
     name: vmSize
     tier: 'Standard'
