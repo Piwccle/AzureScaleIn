@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.33.93.31351",
-      "templateHash": "18359658312455792984"
+      "templateHash": "905252305261798372"
     }
   },
   "parameters": {
@@ -27,16 +27,17 @@
     "base64nodescript": "[base64(variables('nodescript'))]",
     "jsonForProtectionScaleIn": "  {\n    \"properties\": {\n      \"protectionPolicy\": {\n        \"protectFromScaleIn\": true\n      }\n    }        \n  }\n",
     "base64jsonForProtectionScaleIn": "[base64(variables('jsonForProtectionScaleIn'))]",
+    "subscriptionId": "[subscription().subscriptionId]",
+    "resourceGroupName": "[resourceGroup().name]",
     "userDataParams": {
       "base64nodescript": "[variables('base64nodescript')]",
       "base64jsonForProtectionScaleIn": "[variables('base64jsonForProtectionScaleIn')]",
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
       "vmScaleSetName": "myScaleSet",
-      "resourceManager": "[environment().resourceManager]",
-      "identity_id": "[format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myUserAssignedIdentity', subscription().subscriptionId, resourceGroup().name)]"
+      "resourceManager": "[environment().resourceManager]"
     },
-    "userdataTemplate": "#!/bin/bash -x\nset -eu -o pipefail\n\n# Introduce the scripts in the instance\n# app.js\necho ${base64nodescript} | base64 -d > /usr/local/bin/app.js\nchmod +x /usr/local/bin/app.js\n\necho ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json\n\napt-get update && apt-get install -y \napt-get install -y unzip && apt-get install -y stress-ng && apt-get install -y jq\n\n\n# Install Node.js\napt install -y nodejs && apt install -y npm\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\n$IDENTITY_ID=${identity_id}\naz login --identity -u $IDENTITY_ID\n\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\nSUBSCRIPTION_ID=${subscriptionId}\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nRESOURCE_MANAGER=${resourceManager}\n\n# Make a PUT request to the Azure REST API to update the VM instance with protection policy\n#curl -X PUT -H \"Content-Type: application/json\" -H \"Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)\" \\\n#\"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01\" \\\n#-d @/usr/local/bin/jsonForProtectionScaleIn.json\n\naz vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\n\nexport HOME=/home/sergio\n\n#start nodeapp\ncd /usr/local/bin\nnpm install express\nnode /usr/local/bin/app.js\n",
+    "userdataTemplate": "#!/bin/bash -x\nset -u -o pipefail\n\n# Introduce the scripts in the instance\n# app.js\necho ${base64nodescript} | base64 -d > /usr/local/bin/app.js\nchmod +x /usr/local/bin/app.js\n\necho ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json\n\napt-get update && apt-get install -y \napt-get install -y unzip && apt-get install -y stress-ng && apt-get install -y jq\n\n\n# Install Node.js\napt install -y nodejs && apt install -y npm\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\n#az login --identity \n#az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\n\naz login --identity --allow-no-subscriptions\n\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\nSUBSCRIPTION_ID=${subscriptionId}\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nRESOURCE_MANAGER=${resourceManager}\n\n# Make a PUT request to the Azure REST API to update the VM instance with protection policy\ncurl -X PUT -H \"Content-Type: application/json\" -H \"Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)\" \\\n\"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01\" \\\n-d '{\n    \"properties\": {\n      \"protectionPolicy\": {\n        \"protectFromScaleIn\": true\n      }\n    }        \n  }'\n\n\nexport HOME=/home/sergio\n\n#start nodeapp\ncd /usr/local/bin\nnpm install express\nnode /usr/local/bin/app.js\n",
     "userData": "[reduce(items(variables('userDataParams')), createObject('value', variables('userdataTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
     "base64userdata": "[base64(variables('userData'))]",
     "mediaNodeVMSettings": {

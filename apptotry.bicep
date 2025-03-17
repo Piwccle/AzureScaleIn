@@ -147,9 +147,6 @@ var jsonForProtectionScaleIn = '''
 '''
 var base64jsonForProtectionScaleIn = base64(jsonForProtectionScaleIn)
 
-var subscriptionId = subscription().subscriptionId
-var resourceGroupName = resourceGroup().name
-
 var userDataParams = {
   base64nodescript: base64nodescript
   base64jsonForProtectionScaleIn: base64jsonForProtectionScaleIn
@@ -157,12 +154,11 @@ var userDataParams = {
   resourceGroupName: resourceGroup().name
   vmScaleSetName: 'myScaleSet'
   resourceManager: environment().resourceManager
-  identityId: '/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myUserAssignedIdentity'
 }
 
 var userdataTemplate = '''
 #!/bin/bash -x
-set -eu -o pipefail
+set -u -o pipefail
 
 # Introduce the scripts in the instance
 # app.js
@@ -172,17 +168,15 @@ chmod +x /usr/local/bin/app.js
 echo ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json
 
 apt-get update && apt-get install -y 
-apt-get install -y unzip && apt-get install -y stress-ng && apt-get install -y jq
-
-
-# Install Node.js
-apt install -y nodejs && apt install -y npm
+apt-get install -y unzip && apt-get install -y stress && apt-get install -y jq
 
 # Install azure cli
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
-$IDENTITY_ID=${identityId}
-az login --identity -u $IDENTITY_ID
+#az login --identity 
+#az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true
+
+az login --identity --allow-no-subscriptions
 
 BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
 INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
@@ -192,14 +186,18 @@ RESOURCE_GROUP_NAME=${resourceGroupName}
 VM_SCALE_SET_NAME=${vmScaleSetName}
 RESOURCE_MANAGER=${resourceManager}
 
+# Suposse that works and applies the protection policy
+
 # Make a PUT request to the Azure REST API to update the VM instance with protection policy
 #curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)" \
-#"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01" \
+#"https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01" \
 #-d @/usr/local/bin/jsonForProtectionScaleIn.json
 
-az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true
 
 export HOME=/home/sergio
+
+# Install Node.js
+apt install -y nodejs && apt install -y npm
 
 #start nodeapp
 cd /usr/local/bin
@@ -325,7 +323,7 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
         capacity: {
           minimum: string(1) // Mínimo de instancias
           maximum: string(10) // Máximo de instancias
-          default: string(1) // Valor por defecto
+          default: string(2) // Valor por defecto
         }
         rules: [
           {
@@ -371,5 +369,120 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
     ]
     enabled: true
     targetResourceUri: openviduScaleSetMediaNode.id
+  }
+}
+
+var appServicePlanName = 'scaleInFunction-plan'
+var functionAppUrl = 'https://scaleInFunction.azurewebsites.net/api/ScaleInFunction'
+
+// Crear Storage Account para la Function App
+resource storageAccount 'Microsoft.Storage/storageAccounts@2021-08-01' = {
+  name: 'scalestorageacct'
+  location: location
+  kind: 'StorageV2'
+  sku: {
+    name: 'Standard_LRS'
+  }
+}
+
+// Crear App Service Plan (Consumo)
+resource appServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
+  name: appServicePlanName
+  location: location
+  properties: {
+    reserved: true
+  }
+  sku: {
+    name: 'Y1' // Plan de consumo (Dynamic)
+    tier: 'Dynamic'
+  }
+}
+
+// Crear Function App
+resource functionApp 'Microsoft.Web/sites@2021-02-01' = {
+  name: 'scaleInFunction'
+  location: location
+  properties: {
+    serverFarmId: appServicePlan.id
+    siteConfig: {
+      appSettings: [
+        {
+          name: 'AzureWebJobsStorage'
+          value: storageAccount.properties.primaryEndpoints.blob
+        }
+        {
+          name: 'FUNCTIONS_EXTENSION_VERSION'
+          value: '~4'
+        }
+        {
+          name: 'FUNCTIONS_WORKER_RUNTIME'
+          value: 'node'
+        }
+      ]
+    }
+  }
+}
+
+// Crear Action Group en Azure Monitor
+resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: 'ScaleInActionGroup'
+  location: location
+  properties: {
+    groupShortName: 'ScaleInGrp'
+    enabled: true
+    webhookReceivers: [
+      {
+        name: 'ScaleInWebhook'
+        serviceUri: functionAppUrl
+      }
+    ]
+  }
+}
+
+// Crear regla de alerta en Azure Monitor
+// Es probable que funcione 
+resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2023-01-01-preview' = {
+  name: 'ScaleInAlertRule'
+  location: location
+  properties: {
+    scopes: [
+      openviduScaleSetMediaNode.id
+    ]
+    condition: {
+      allOf: [
+        {
+          field: 'category'
+          equals: 'Administrative'
+        }
+        {
+          field: 'operationName'
+          equals: 'Microsoft.Compute/virtualMachineScaleSets/write'
+        }
+        {
+          field: 'level'
+          containsAny: [
+            'error'
+          ]
+        }
+        {
+          field: 'status'
+          containsAny: [
+            'failed'
+          ]
+        }
+        {
+          field: 'caller'
+          equals: '42628537-ebd8-40bf-941a-dddd338e1fe9'
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [
+        {
+          actionGroupId: actionGroup.id
+        }
+      ]
+    }
+    enabled: true
   }
 }
