@@ -235,19 +235,15 @@ var mediaNodeVMSettings = {
   }
 }
 
-resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'myUserAssignedIdentity'
-  location: location
-}
+/*resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: 'roleAssignmentForScaleSet'
 
 resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@2024-07-01' = {
   name: 'myScaleSet'
   location: location
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${userAssignedIdentity.id}': {}
-    }
+    type: 'SystemAssigned'
   }
   sku: {
     name: vmSize
@@ -430,10 +426,9 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   properties: {
     groupShortName: 'ScaleInGrp'
     enabled: true
-    webhookReceivers: [
+    automationRunbookReceivers: [
       {
-        name: 'ScaleInWebhook'
-        serviceUri: functionAppUrl
+        
       }
     ]
   }
