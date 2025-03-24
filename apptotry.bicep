@@ -92,49 +92,39 @@ resource openviduMediaNodeNSG 'Microsoft.Network/networkSecurityGroups@2021-02-0
   }
 }
 
-var nodescript = '''
-const express = require('express');
-const os = require('os');
-const app = express();
-const port = 3000;
+var scriptTemplate = '''
+#!/bin/bash -x
 
-app.get('/', (req, res) => {
-    const localIP = getLocalIP();
-    res.send(`
-        <html>
-            <body>
-                <h1>Node.js App</h1>
-                <p>IP Address: ${localIP}</p>
-                <button onclick="fetch('/shutdown', { method: 'POST' })">Shutdown</button>
-            </body>
-        </html>
-    `);
-});
+az login --identity
 
-app.post('/shutdown', (req, res) => {
-    res.send('Shutting down...');
-    process.exit();
-});
+# Generate a random number between 100 and 200
+RANDOM_WAIT_TIME=$(( ( RANDOM % 200 )  + 100 ))
 
-function getLocalIP() {
-    const interfaces = os.networkInterfaces();
-    for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-                return iface.address;
-            }
-        }
-    }
-    return '127.0.0.1';
-}
+# Wait for the random time
+sleep $RANDOM_WAIT_TIME
 
-app.listen(port, () => {
-    const localIP = getLocalIP();
-    console.log(`App listening at http://${localIP}:${port}`);
-}); 
+RESOURCE_GROUP_NAME=${resourceGroupName}
+VM_SCALE_SET_NAME=${vmScaleSetName}
+BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
+INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
+
+az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in false
 '''
 
-var base64nodescript = base64(nodescript)
+var scriptParams = {
+  subscriptionId: subscription().subscriptionId
+  resourceGroupName: resourceGroup().name
+  vmScaleSetName: 'myScaleSet'
+}
+
+var script = reduce(
+  items(scriptParams),
+  { value: scriptTemplate },
+  (curr, next) => { value: replace(curr.value, '\${${next.key}}', next.value) }
+).value
+
+
+var base64script = base64(script)
 
 var jsonForProtectionScaleIn = '''
   {
@@ -148,12 +138,11 @@ var jsonForProtectionScaleIn = '''
 var base64jsonForProtectionScaleIn = base64(jsonForProtectionScaleIn)
 
 var userDataParams = {
-  base64nodescript: base64nodescript
+  base64script: base64script
   base64jsonForProtectionScaleIn: base64jsonForProtectionScaleIn
   subscriptionId: subscription().subscriptionId
   resourceGroupName: resourceGroup().name
   vmScaleSetName: 'myScaleSet'
-  resourceManager: environment().resourceManager
 }
 
 var userdataTemplate = '''
@@ -162,8 +151,8 @@ set -u -o pipefail
 
 # Introduce the scripts in the instance
 # app.js
-echo ${base64nodescript} | base64 -d > /usr/local/bin/app.js
-chmod +x /usr/local/bin/app.js
+echo ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh
+chmod +x /usr/local/bin/stop_media_node.sh
 
 echo ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json
 
@@ -173,36 +162,16 @@ apt-get install -y unzip && apt-get install -y stress && apt-get install -y jq
 # Install azure cli
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
-#az login --identity 
-#az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true
+az login --identity 
 
-az login --identity --allow-no-subscriptions
-
+RESOURCE_GROUP_NAME=${resourceGroupName}
+VM_SCALE_SET_NAME=${vmScaleSetName}
 BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
 INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
 
-SUBSCRIPTION_ID=${subscriptionId}
-RESOURCE_GROUP_NAME=${resourceGroupName}
-VM_SCALE_SET_NAME=${vmScaleSetName}
-RESOURCE_MANAGER=${resourceManager}
+az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true
 
-# Suposse that works and applies the protection policy
-
-# Make a PUT request to the Azure REST API to update the VM instance with protection policy
-#curl -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)" \
-#"https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01" \
-#-d @/usr/local/bin/jsonForProtectionScaleIn.json
-
-
-export HOME=/home/sergio
-
-# Install Node.js
-apt install -y nodejs && apt install -y npm
-
-#start nodeapp
-cd /usr/local/bin
-npm install express
-node /usr/local/bin/app.js
+stress --cpu 2 --timeout 600s
 '''
 
 var userData = reduce(
@@ -235,8 +204,8 @@ var mediaNodeVMSettings = {
   }
 }
 
-/*resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: 'roleAssignmentForScaleSet'
+resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: 'roleAssignmentForScaleSet' // guid
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -245,7 +214,7 @@ var mediaNodeVMSettings = {
     )
     principalId: openviduScaleSetMediaNode.identity.principalId
   }
-}*/
+}
 
 resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@2024-07-01' = {
   name: 'myScaleSet'
@@ -376,71 +345,55 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
   }
 }
 
-var appServicePlanName = 'scaleInFunction-plan'
-var functionAppUrl = 'https://scaleInFunction.azurewebsites.net/api/ScaleInFunction'
-
-// Crear Storage Account para la Function App
-resource storageAccount 'Microsoft.Storage/storageAccounts@2021-08-01' = {
-  name: 'scalestorageacct'
-  location: location
-  kind: 'StorageV2'
-  sku: {
-    name: 'Standard_LRS'
+//Crear rol para el Automation Account
+resource roleAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: 'roleAssignmentForAutomationAccount' //guid
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    )
+    principalId: automationAccount.identity.principalId
   }
 }
 
-// Crear App Service Plan (Consumo)
-resource appServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
-  name: appServicePlanName
-  location: location
-  properties: {
-    reserved: true
+//Crear un Automation account
+resource automationAccount 'Microsoft.Automation/automationAccounts@2024-10-23' = {
+  name: 'myAutomationAccount'
+  location: 'global'
+  identity: {
+    type: 'SystemAssigned'
   }
-  sku: {
-    name: 'Y1' // Plan de consumo (Dynamic)
-    tier: 'Dynamic'
-  }
-}
-
-// Crear Function App
-resource functionApp 'Microsoft.Web/sites@2021-02-01' = {
-  name: 'scaleInFunction'
-  location: location
   properties: {
-    serverFarmId: appServicePlan.id
-    siteConfig: {
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: storageAccount.properties.primaryEndpoints.blob
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'node'
-        }
-      ]
+    sku: {
+      name: 'Basic'
     }
   }
 }
 
-// Crear Action Group en Azure Monitor
-resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
-  name: 'ScaleInActionGroup'
-  location: location
+resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
+  name: 'actiongrouptest'
+  location: 'global'
   properties: {
-    groupShortName: 'ScaleInGrp'
+    groupShortName: 'tacg'
     enabled: true
     automationRunbookReceivers: [
       {
-        
+        name: 'scalein'
+        serviceUri: 'https://bd0918eb-a0fe-48c6-b995-432f2f824ca3.webhook.ne.azure-automation.net/webhooks?token=qsl2S7COZrCX%2btafA%2bVIDtDK0WgLXC7gVHP%2fhHbFf6Y%3d'
+        useCommonAlertSchema: false
+        automationAccountId: automationAccount.id
+        runbookName: 'testrunbook'
+        webhookResourceId: '${automationAccount.id}/webhooks/Alert1742494428933'
+        isGlobalRunbook: false
       }
     ]
   }
 }
+
+// Crear el testrunbook
+
 
 // Crear regla de alerta en Azure Monitor
 // Es probable que funcione 
@@ -482,7 +435,7 @@ resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2023-01-01
     actions: {
       actionGroups: [
         {
-          actionGroupId: actionGroup.id
+          actionGroupId: actionGroupScaleIn.id
         }
       ]
     }
