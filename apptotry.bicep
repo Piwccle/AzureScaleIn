@@ -105,8 +105,12 @@ sleep $RANDOM_WAIT_TIME
 
 RESOURCE_GROUP_NAME=${resourceGroupName}
 VM_SCALE_SET_NAME=${vmScaleSetName}
+SUBSCRIPTION_ID=${subscriptionId}
 BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
 INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
+RESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME
+
+az tag update --resource-id $RESOURCE_ID --operation replace --tags "STATUS"="HEALTHY"
 
 az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in false
 '''
@@ -122,7 +126,6 @@ var script = reduce(
   { value: scriptTemplate },
   (curr, next) => { value: replace(curr.value, '\${${next.key}}', next.value) }
 ).value
-
 
 var base64script = base64(script)
 
@@ -205,7 +208,7 @@ var mediaNodeVMSettings = {
 }
 
 resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: 'roleAssignmentForScaleSet' // guid
+  name: guid('roleAssignmentForScaleSet') // guid
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -347,7 +350,7 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
 
 //Crear rol para el Automation Account
 resource roleAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: 'roleAssignmentForAutomationAccount' //guid
+  name: guid('roleAssignmentForAutomationAccount')
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -393,7 +396,6 @@ resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
 }
 
 // Crear el testrunbook
-
 
 // Crear regla de alerta en Azure Monitor
 // Es probable que funcione 
