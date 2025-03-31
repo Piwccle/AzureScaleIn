@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.33.93.31351",
-      "templateHash": "18115662890170591491"
+      "version": "0.34.44.8038",
+      "templateHash": "9530137968675284983"
     }
   },
   "parameters": {
@@ -23,19 +23,21 @@
   },
   "variables": {
     "location": "[resourceGroup().location]",
-    "nodescript": "const express = require('express');\nconst os = require('os');\nconst app = express();\nconst port = 3000;\n\napp.get('/', (req, res) => {\n    const localIP = getLocalIP();\n    res.send(`\n        <html>\n            <body>\n                <h1>Node.js App</h1>\n                <p>IP Address: ${localIP}</p>\n                <button onclick=\"fetch('/shutdown', { method: 'POST' })\">Shutdown</button>\n            </body>\n        </html>\n    `);\n});\n\napp.post('/shutdown', (req, res) => {\n    res.send('Shutting down...');\n    process.exit();\n});\n\nfunction getLocalIP() {\n    const interfaces = os.networkInterfaces();\n    for (const name of Object.keys(interfaces)) {\n        for (const iface of interfaces[name]) {\n            if (iface.family === 'IPv4' && !iface.internal) {\n                return iface.address;\n            }\n        }\n    }\n    return '127.0.0.1';\n}\n\napp.listen(port, () => {\n    const localIP = getLocalIP();\n    console.log(`App listening at http://${localIP}:${port}`);\n}); \n",
-    "base64nodescript": "[base64(variables('nodescript'))]",
-    "jsonForProtectionScaleIn": "  {\n    \"properties\": {\n      \"protectionPolicy\": {\n        \"protectFromScaleIn\": true\n      }\n    }        \n  }\n",
-    "base64jsonForProtectionScaleIn": "[base64(variables('jsonForProtectionScaleIn'))]",
-    "userDataParams": {
-      "base64nodescript": "[variables('base64nodescript')]",
-      "base64jsonForProtectionScaleIn": "[variables('base64jsonForProtectionScaleIn')]",
+    "scriptTemplate": "#!/bin/bash -x\r\n\r\naz login --identity\r\n\r\necho \"Hello, I am a Media Node\" > /tmp/hello.txt\r\n\r\n# Generate a random number between 100 and 200\r\nRANDOM_WAIT_TIME=$(( ( RANDOM % 200 )  + 100 ))\r\n\r\n# Wait for the random time\r\nsleep $RANDOM_WAIT_TIME\r\n\r\nRESOURCE_GROUP_NAME=${resourceGroupName}\r\nVM_SCALE_SET_NAME=${vmScaleSetName}\r\nSUBSCRIPTION_ID=${subscriptionId}\r\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\r\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\r\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\r\n\r\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\"\r\n\r\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\r\n",
+    "scriptParams": {
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
-      "vmScaleSetName": "myScaleSet",
-      "resourceManager": "[environment().resourceManager]"
+      "vmScaleSetName": "myScaleSet"
     },
-    "userdataTemplate": "#!/bin/bash -x\nset -u -o pipefail\n\n# Introduce the scripts in the instance\n# app.js\necho ${base64nodescript} | base64 -d > /usr/local/bin/app.js\nchmod +x /usr/local/bin/app.js\n\necho ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json\n\napt-get update && apt-get install -y \napt-get install -y unzip && apt-get install -y stress && apt-get install -y jq\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\n#az login --identity \n#az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\n\naz login --identity --allow-no-subscriptions\n\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\nSUBSCRIPTION_ID=${subscriptionId}\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nRESOURCE_MANAGER=${resourceManager}\n\n# Suposse that works and applies the protection policy\n\n# Make a PUT request to the Azure REST API to update the VM instance with protection policy\n#curl -X PUT -H \"Content-Type: application/json\" -H \"Authorization: Bearer $(az account get-access-token --query accessToken -o tsv)\" \\\n#\"https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME/virtualMachines/$INSTANCE_ID?api-version=2019-03-01\" \\\n#-d @/usr/local/bin/jsonForProtectionScaleIn.json\n\n\nexport HOME=/home/sergio\n\n# Install Node.js\napt install -y nodejs && apt install -y npm\n\n#start nodeapp\ncd /usr/local/bin\nnpm install express\nnode /usr/local/bin/app.js\n",
+    "script": "[reduce(items(variables('scriptParams')), createObject('value', variables('scriptTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
+    "base64script": "[base64(variables('script'))]",
+    "userDataParams": {
+      "base64script": "[variables('base64script')]",
+      "subscriptionId": "[subscription().subscriptionId]",
+      "resourceGroupName": "[resourceGroup().name]",
+      "vmScaleSetName": "myScaleSet"
+    },
+    "userdataTemplate": "#!/bin/bash -x\r\nset -u -o pipefail\r\n\r\n# Introduce the scripts in the instance\r\necho ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh\r\nchmod +x /usr/local/bin/stop_media_node.sh\r\n\r\napt-get update && apt-get install -y \r\napt-get install -y unzip && apt-get install -y stress && apt-get install -y jq\r\n\r\n# Install azure cli\r\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\r\n\r\naz login --identity \r\n\r\nRESOURCE_GROUP_NAME=${resourceGroupName}\r\nVM_SCALE_SET_NAME=${vmScaleSetName}\r\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\r\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\r\n\r\naz vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\r\n\r\nstress --cpu 2 --timeout 600s\r\n",
     "userData": "[reduce(items(variables('userDataParams')), createObject('value', variables('userdataTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
     "base64userdata": "[base64(variables('userData'))]",
     "mediaNodeVMSettings": {
@@ -156,7 +158,7 @@
     {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
-      "name": "roleAssignmentForScaleSet",
+      "name": "[guid('roleAssignmentForScaleSet')]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
         "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachineScaleSets', 'myScaleSet'), '2024-07-01', 'full').identity.principalId]"
@@ -305,28 +307,65 @@
     {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
-      "name": "roleAssignmentForAutomationAccount",
+      "name": "[guid('roleAutomationContributorAssignmentAutomationAccount')]",
       "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
-        "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', 'myAutomationAccount'), '2024-10-23', 'full').identity.principalId]"
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f353d9bd-d4a6-484e-a77a-8050b599b867')]",
+        "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount'), '2023-11-01', 'full').identity.principalId]"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Automation/automationAccounts', 'myAutomationAccount')]"
+        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
       ]
     },
     {
       "type": "Microsoft.Automation/automationAccounts",
-      "apiVersion": "2024-10-23",
-      "name": "myAutomationAccount",
+      "apiVersion": "2023-11-01",
+      "name": "myautomationaccount",
       "location": "[variables('location')]",
       "identity": {
         "type": "SystemAssigned"
       },
       "properties": {
+        "publicNetworkAccess": true,
+        "disableLocalAuth": false,
         "sku": {
           "name": "Basic"
         }
       }
+    },
+    {
+      "type": "Microsoft.Automation/automationAccounts/webhooks",
+      "apiVersion": "2024-10-23",
+      "name": "[format('{0}/{1}', 'myautomationaccount', guid('scaleinwebhook'))]",
+      "properties": {
+        "expiryTime": "2035-03-30T00:00:00Z",
+        "isEnabled": true,
+        "runbook": {
+          "name": "testscalein"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
+        "[resourceId('Microsoft.Automation/automationAccounts/runbooks', 'myautomationaccount', 'testscalein')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Automation/automationAccounts/runbooks",
+      "apiVersion": "2023-11-01",
+      "name": "[format('{0}/{1}', 'myautomationaccount', 'testscalein')]",
+      "location": "westeurope",
+      "properties": {
+        "publishContentLink": {
+          "uri": "https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1",
+          "version": "1.0.0.0"
+        },
+        "runbookType": "PowerShell72",
+        "logVerbose": true,
+        "logProgress": true,
+        "logActivityTrace": 0
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
+      ]
     },
     {
       "type": "Microsoft.Insights/actionGroups",
@@ -339,17 +378,18 @@
         "automationRunbookReceivers": [
           {
             "name": "scalein",
-            "serviceUri": "https://bd0918eb-a0fe-48c6-b995-432f2f824ca3.webhook.ne.azure-automation.net/webhooks?token=qsl2S7COZrCX%2btafA%2bVIDtDK0WgLXC7gVHP%2fhHbFf6Y%3d",
             "useCommonAlertSchema": false,
-            "automationAccountId": "[resourceId('Microsoft.Automation/automationAccounts', 'myAutomationAccount')]",
-            "runbookName": "testrunbook",
-            "webhookResourceId": "[format('{0}/webhooks/Alert1742494428933', resourceId('Microsoft.Automation/automationAccounts', 'myAutomationAccount'))]",
-            "isGlobalRunbook": false
+            "automationAccountId": "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
+            "runbookName": "testscalein",
+            "webhookResourceId": "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', guid('scaleinwebhook'))]",
+            "isGlobalRunbook": false,
+            "serviceUri": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', guid('scaleinwebhook')), '2024-10-23').uri]"
           }
         ]
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Automation/automationAccounts', 'myAutomationAccount')]"
+        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
+        "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', guid('scaleinwebhook'))]"
       ]
     },
     {

@@ -26,13 +26,12 @@ $schemaId = $WebhookBody.schemaId
 # Check if the schemaId is the one we can manage
 if (!($schemaId -eq "Microsoft.Insights/activityLogs")) {
     Write-Error "The alert data schema - $schemaId - is not supported."
-    exit
+    exit 1
 }
 
 
 # This is the Activity Log Alert schema
 $AlertContext = [object] (($WebhookBody.data).context).activityLog
-$SubId = $AlertContext.subscriptionId
 $ResourceGroupName = $AlertContext.resourceGroupName
 $ResourceType = $AlertContext.resourceType
 $ResourceName = (($AlertContext.resourceId).Split("/"))[-1]
@@ -41,19 +40,13 @@ $status = ($WebhookBody.data).status
 # Check if the status is not activated to leave the runbook
 if (!($status -eq "Activated")) {
     Write-Error "No action taken. Alert status: $status"
-    exit
+    exit 1
 }
 # Determine code path depending on the resourceType
 if (!($ResourceType -eq "Microsoft.Compute/virtualMachineScaleSets")) {
     Write-Error "$ResourceType is not a supported resource type for this runbook."
-    exit
+    exit 1
 }
-
-# Print for debug
-"resourceType: $ResourceType"
-"resourceName: $ResourceName" 
-"resourceGroupName: $ResourceGroupName" 
-"subscriptionId: $SubId" 
 
 # Ensures you do not inherit an AzContext in your runbook
 Disable-AzContextAutosave -Scope Process
@@ -70,22 +63,39 @@ catch {
     throw $_.Exception
 }
 
-# Loop the instances in the VMSS to check the tags, and see if one of them is TERMINATING to leave the runbook
+"Checking if one Run Command is executing"
+# Get the instances and select the index 0 instance to check if runcommand is running on it and later invoke the run command
 $InstancesInVMSS = Get-AzVmssVM -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
+
+# Iterate through each instance and check if RunCommand is still running
 foreach ($Instance in $InstancesInVMSS) {
-    # Check if there is a tag that has "TERMINATING" value
-    if ($Instance.Tags.Values -contains "TERMINATING") {
-        "Found 'TERMINATING' tag so this runbook will not execute."
-        exit
+    $runCommandStatus = Get-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $Instance.InstanceId
+
+    # Check if the RunCommand is still running
+    if ($runCommandStatus.ProvisioningState -eq "Running") {
+        Write-Output "Instance $($Instance.InstanceId) is still running a command. Exiting..."
+        exit 1  # Exit the script if any instance is still running the command
     }
 }
+"Done checking"
+# Check the tags in the VMSS to see if there is a tag with value TERMINATING
+$VMSS = Get-AzVmss -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
+if($VMSS.Tags.Values -contains "TERMINATING"){
+    "Found 'TERMINATING' tag so this runbook will not execute."
+    exit 1
+}
+
+"Changing TAG"
+$VMSS.Tags["STATUS"] = "TERMINATING"
+Set-AzResource -ResourceId $VMSS.Id -Tag $VMSS.Tags -Force
+"TAG updated"
 
 # If no VM has been selected previously, select the VM with instance_id 0 and tag it as TERMINATING instance
-"Updating TAG in instance with id 0"
-$Instance_id = 0
-$Instance0 = Get-AzVmssVM -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $Instance_id
-$Instance0.Tags["STATUS"] = "TERMINATING"
-Update-AzVmssVM -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $Instance_id -Tag $Instance0.Tags
+$InstanceId = $InstancesInVMSS[0].InstanceId
 
+"Sending RunCommand"
 # Run command to let the VM begin terminating, when is done itself will deprotect and the VMSS will delete it, eliminating the tag previously associated and starting a new delete if needed.
-Invoke-AzVMRunCommand -ResourceGroupName $ResourceGroupName -Name $InstanceName -CommandId 'RunShellScript' -ScriptPath './usr/local/bin/stop_media_node.sh'
+Invoke-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $InstanceId -CommandId 'RunShellScript' -ScriptString 'sudo /usr/local/bin/stop_media_node.sh'
+"Run command send"
+
+exit

@@ -97,6 +97,8 @@ var scriptTemplate = '''
 
 az login --identity
 
+echo "Hello, I am a Media Node" > /tmp/hello.txt
+
 # Generate a random number between 100 and 200
 RANDOM_WAIT_TIME=$(( ( RANDOM % 200 )  + 100 ))
 
@@ -112,7 +114,7 @@ RESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/
 
 az tag update --resource-id $RESOURCE_ID --operation replace --tags "STATUS"="HEALTHY"
 
-az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in false
+az vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID
 '''
 
 var scriptParams = {
@@ -129,20 +131,8 @@ var script = reduce(
 
 var base64script = base64(script)
 
-var jsonForProtectionScaleIn = '''
-  {
-    "properties": {
-      "protectionPolicy": {
-        "protectFromScaleIn": true
-      }
-    }        
-  }
-'''
-var base64jsonForProtectionScaleIn = base64(jsonForProtectionScaleIn)
-
 var userDataParams = {
   base64script: base64script
-  base64jsonForProtectionScaleIn: base64jsonForProtectionScaleIn
   subscriptionId: subscription().subscriptionId
   resourceGroupName: resourceGroup().name
   vmScaleSetName: 'myScaleSet'
@@ -153,11 +143,8 @@ var userdataTemplate = '''
 set -u -o pipefail
 
 # Introduce the scripts in the instance
-# app.js
 echo ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh
 chmod +x /usr/local/bin/stop_media_node.sh
-
-echo ${base64jsonForProtectionScaleIn} | base64 -d > /usr/local/bin/jsonForProtectionScaleIn.json
 
 apt-get update && apt-get install -y 
 apt-get install -y unzip && apt-get install -y stress && apt-get install -y jq
@@ -208,7 +195,7 @@ var mediaNodeVMSettings = {
 }
 
 resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('roleAssignmentForScaleSet') // guid
+  name: guid('roleAssignmentForScaleSet')
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -349,8 +336,8 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
 }
 
 //Crear rol para el Automation Account
-resource roleAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('roleAssignmentForAutomationAccount')
+/*resource roleContributorAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('roleContributorAssignmentAutomationAccount')
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -359,19 +346,64 @@ resource roleAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignment
     )
     principalId: automationAccount.identity.principalId
   }
+}*/
+
+resource roleAutomationContributorAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('roleAutomationContributorAssignmentAutomationAccount')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'f353d9bd-d4a6-484e-a77a-8050b599b867'
+    )
+    principalId: automationAccount.identity.principalId
+  }
 }
 
-//Crear un Automation account
-resource automationAccount 'Microsoft.Automation/automationAccounts@2024-10-23' = {
-  name: 'myAutomationAccount'
-  location: 'global'
+// Crear el automation account y el runbook
+resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' = {
+  name: 'myautomationaccount'
+  location: location
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
+    publicNetworkAccess: true
+    disableLocalAuth: false
     sku: {
       name: 'Basic'
     }
+  }
+}
+
+resource runbookWebhook 'Microsoft.Automation/automationAccounts/webhooks@2024-10-23' = {
+  parent: automationAccount
+  name: guid('scaleinwebhook')
+  properties: {
+    expiryTime: '2035-03-30T00:00:00Z'
+    isEnabled: true
+    runbook: {
+      name: 'testscalein'
+    }
+  }
+  dependsOn: [
+    runbookScaleIn
+  ]
+}
+
+resource runbookScaleIn 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
+  parent: automationAccount
+  name: 'testscalein'
+  location: 'westeurope'
+  properties: {
+    publishContentLink: {
+      uri: 'https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1'
+      version: '1.0.0.0'
+    }
+    runbookType: 'PowerShell72'
+    logVerbose: true
+    logProgress: true
+    logActivityTrace: 0
   }
 }
 
@@ -384,21 +416,19 @@ resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
     automationRunbookReceivers: [
       {
         name: 'scalein'
-        serviceUri: 'https://bd0918eb-a0fe-48c6-b995-432f2f824ca3.webhook.ne.azure-automation.net/webhooks?token=qsl2S7COZrCX%2btafA%2bVIDtDK0WgLXC7gVHP%2fhHbFf6Y%3d'
         useCommonAlertSchema: false
         automationAccountId: automationAccount.id
-        runbookName: 'testrunbook'
-        webhookResourceId: '${automationAccount.id}/webhooks/Alert1742494428933'
+        runbookName: 'testscalein'
+        webhookResourceId: runbookWebhook.id
         isGlobalRunbook: false
+        serviceUri: runbookWebhook.properties.uri
       }
     ]
   }
 }
 
-// Crear el testrunbook
 
 // Crear regla de alerta en Azure Monitor
-// Es probable que funcione 
 resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2023-01-01-preview' = {
   name: 'ScaleInAlertRule'
   location: location
