@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.34.44.8038",
-      "templateHash": "9530137968675284983"
+      "templateHash": "6647455033781577396"
     }
   },
   "parameters": {
@@ -23,7 +23,7 @@
   },
   "variables": {
     "location": "[resourceGroup().location]",
-    "scriptTemplate": "#!/bin/bash -x\r\n\r\naz login --identity\r\n\r\necho \"Hello, I am a Media Node\" > /tmp/hello.txt\r\n\r\n# Generate a random number between 100 and 200\r\nRANDOM_WAIT_TIME=$(( ( RANDOM % 200 )  + 100 ))\r\n\r\n# Wait for the random time\r\nsleep $RANDOM_WAIT_TIME\r\n\r\nRESOURCE_GROUP_NAME=${resourceGroupName}\r\nVM_SCALE_SET_NAME=${vmScaleSetName}\r\nSUBSCRIPTION_ID=${subscriptionId}\r\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\r\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\r\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\r\n\r\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\"\r\n\r\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\r\n",
+    "scriptTemplate": "#!/bin/bash -x\n\naz login --identity\n\necho \"Hello, I am a Media Node\" > /tmp/hello.txt\n\n# Generate a random number between 100 and 200\nRANDOM_WAIT_TIME=$(( ( RANDOM % 200 )  + 100 ))\n\n# Wait for the random time\nsleep $RANDOM_WAIT_TIME\n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nSUBSCRIPTION_ID=${subscriptionId}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\n\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\"\n\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\n",
     "scriptParams": {
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
@@ -37,7 +37,7 @@
       "resourceGroupName": "[resourceGroup().name]",
       "vmScaleSetName": "myScaleSet"
     },
-    "userdataTemplate": "#!/bin/bash -x\r\nset -u -o pipefail\r\n\r\n# Introduce the scripts in the instance\r\necho ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh\r\nchmod +x /usr/local/bin/stop_media_node.sh\r\n\r\napt-get update && apt-get install -y \r\napt-get install -y unzip && apt-get install -y stress && apt-get install -y jq\r\n\r\n# Install azure cli\r\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\r\n\r\naz login --identity \r\n\r\nRESOURCE_GROUP_NAME=${resourceGroupName}\r\nVM_SCALE_SET_NAME=${vmScaleSetName}\r\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\r\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\r\n\r\naz vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\r\n\r\nstress --cpu 2 --timeout 600s\r\n",
+    "userdataTemplate": "#!/bin/bash -x\nset -u -o pipefail\n\n# Introduce the scripts in the instance\necho ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh\nchmod +x /usr/local/bin/stop_media_node.sh\n\napt-get update && apt-get install -y \napt-get install -y unzip && apt-get install -y stress && apt-get install -y jq\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\naz login --identity \n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\naz vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\n\nstress --cpu 2 --timeout 600s\n",
     "userData": "[reduce(items(variables('userDataParams')), createObject('value', variables('userdataTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
     "base64userdata": "[base64(variables('userData'))]",
     "mediaNodeVMSettings": {
@@ -60,7 +60,8 @@
           ]
         }
       }
-    }
+    },
+    "expiryTime": "2035-03-30T00:00:00Z"
   },
   "resources": [
     {
@@ -263,7 +264,7 @@
                   "metricResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', 'myScaleSet')]",
                   "statistic": "Average",
                   "operator": "GreaterThan",
-                  "threshold": 50,
+                  "threshold": 80,
                   "timeAggregation": "Average",
                   "timeWindow": "PT5M",
                   "timeGrain": "PT1M"
@@ -282,7 +283,7 @@
                   "metricResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', 'myScaleSet')]",
                   "statistic": "Average",
                   "operator": "LessThan",
-                  "threshold": 50,
+                  "threshold": 60,
                   "timeAggregation": "Average",
                   "timeWindow": "PT5M",
                   "timeGrain": "PT1M"
@@ -310,7 +311,8 @@
       "name": "[guid('roleAutomationContributorAssignmentAutomationAccount')]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f353d9bd-d4a6-484e-a77a-8050b599b867')]",
-        "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount'), '2023-11-01', 'full').identity.principalId]"
+        "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount'), '2023-11-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
@@ -334,10 +336,10 @@
     },
     {
       "type": "Microsoft.Automation/automationAccounts/webhooks",
-      "apiVersion": "2024-10-23",
-      "name": "[format('{0}/{1}', 'myautomationaccount', guid('scaleinwebhook'))]",
+      "apiVersion": "2015-10-31",
+      "name": "[format('{0}/{1}', 'myautomationaccount', format('Alert{0}', variables('expiryTime')))]",
       "properties": {
-        "expiryTime": "2035-03-30T00:00:00Z",
+        "expiryTime": "[variables('expiryTime')]",
         "isEnabled": true,
         "runbook": {
           "name": "testscalein"
@@ -381,20 +383,20 @@
             "useCommonAlertSchema": false,
             "automationAccountId": "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
             "runbookName": "testscalein",
-            "webhookResourceId": "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', guid('scaleinwebhook'))]",
+            "webhookResourceId": "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', format('Alert{0}', variables('expiryTime')))]",
             "isGlobalRunbook": false,
-            "serviceUri": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', guid('scaleinwebhook')), '2024-10-23').uri]"
+            "serviceUri": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', format('Alert{0}', variables('expiryTime'))), '2015-10-31').uri]"
           }
         ]
       },
       "dependsOn": [
         "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
-        "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', guid('scaleinwebhook'))]"
+        "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', format('Alert{0}', variables('expiryTime')))]"
       ]
     },
     {
       "type": "Microsoft.Insights/activityLogAlerts",
-      "apiVersion": "2023-01-01-preview",
+      "apiVersion": "2020-10-01",
       "name": "ScaleInAlertRule",
       "location": "[variables('location')]",
       "properties": {

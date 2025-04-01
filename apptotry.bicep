@@ -296,7 +296,7 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
               metricResourceUri: openviduScaleSetMediaNode.id
               statistic: 'Average'
               operator: 'GreaterThan'
-              threshold: 50
+              threshold: 80
               timeAggregation: 'Average'
               timeWindow: 'PT5M'
               timeGrain: 'PT1M'
@@ -315,7 +315,7 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
               metricResourceUri: openviduScaleSetMediaNode.id
               statistic: 'Average'
               operator: 'LessThan'
-              threshold: 50
+              threshold: 60
               timeAggregation: 'Average'
               timeWindow: 'PT5M'
               timeGrain: 'PT1M'
@@ -357,6 +357,7 @@ resource roleAutomationContributorAssignmentAutomationAccount 'Microsoft.Authori
       'f353d9bd-d4a6-484e-a77a-8050b599b867'
     )
     principalId: automationAccount.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -376,15 +377,19 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
   }
 }
 
-resource runbookWebhook 'Microsoft.Automation/automationAccounts/webhooks@2024-10-23' = {
+var expiryTime = '2035-03-30T00:00:00Z'
+
+
+resource runbookWebhook 'Microsoft.Automation/automationAccounts/webhooks@2015-10-31' = {
   parent: automationAccount
-  name: guid('scaleinwebhook')
+  name: 'Alert${expiryTime}'
   properties: {
-    expiryTime: '2035-03-30T00:00:00Z'
+    expiryTime: expiryTime
     isEnabled: true
     runbook: {
       name: 'testscalein'
     }
+    uri: ''
   }
   dependsOn: [
     runbookScaleIn
@@ -429,7 +434,7 @@ resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
 
 
 // Crear regla de alerta en Azure Monitor
-resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2023-01-01-preview' = {
+resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
   name: 'ScaleInAlertRule'
   location: location
   properties: {
@@ -474,3 +479,5 @@ resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2023-01-01
     enabled: true
   }
 }
+
+output uriWebhook string = runbookWebhook.properties.uri
