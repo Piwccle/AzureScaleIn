@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.34.44.8038",
-      "templateHash": "13125458713608816294"
+      "templateHash": "2074542435055076660"
     }
   },
   "parameters": {
@@ -19,15 +19,6 @@
     "vmSize": {
       "type": "string",
       "defaultValue": "Standard_B2s"
-    },
-    "webhookUri": {
-      "type": "string"
-    },
-    "webhookId": {
-      "type": "string"
-    },
-    "automationAccountId": {
-      "type": "string"
     }
   },
   "variables": {
@@ -325,14 +316,17 @@
           {
             "name": "scalein",
             "useCommonAlertSchema": false,
-            "automationAccountId": "[parameters('automationAccountId')]",
+            "automationAccountId": "[reference(resourceId('Microsoft.Resources/deployments', 'WebhookDeployment'), '2022-09-01').outputs.automationAccountId.value]",
             "runbookName": "testscalein",
-            "webhookResourceId": "[parameters('webhookId')]",
+            "webhookResourceId": "[reference(resourceId('Microsoft.Resources/deployments', 'WebhookDeployment'), '2022-09-01').outputs.webhookId.value]",
             "isGlobalRunbook": false,
-            "serviceUri": "[parameters('webhookUri')]"
+            "serviceUri": "[reference(resourceId('Microsoft.Resources/deployments', 'WebhookDeployment'), '2022-09-01').outputs.webhookUri.value]"
           }
         ]
-      }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'WebhookDeployment')]"
+      ]
     },
     {
       "type": "Microsoft.Insights/activityLogAlerts",
