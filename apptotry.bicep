@@ -346,19 +346,6 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
     )
     principalId: automationAccount.identity.principalId
   }
-}*/
-
-resource roleAutomationContributorAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('roleAutomationContributorAssignmentAutomationAccount')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      'f353d9bd-d4a6-484e-a77a-8050b599b867'
-    )
-    principalId: automationAccount.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
 }
 
 // Crear el automation account y el runbook
@@ -379,8 +366,7 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
 
 var expiryTime = '2035-03-30T00:00:00Z'
 
-
-resource runbookWebhook 'Microsoft.Automation/automationAccounts/webhooks@2015-10-31' = {
+/*resource runbookWebhook 'Microsoft.Automation/automationAccounts/webhooks@2015-10-31' = {
   parent: automationAccount
   name: 'Alert${expiryTime}'
   properties: {
@@ -395,7 +381,7 @@ resource runbookWebhook 'Microsoft.Automation/automationAccounts/webhooks@2015-1
     runbookScaleIn
   ]
 }
-
+  
 resource runbookScaleIn 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
   parent: automationAccount
   name: 'testscalein'
@@ -410,6 +396,13 @@ resource runbookScaleIn 'Microsoft.Automation/automationAccounts/runbooks@2023-1
     logProgress: true
     logActivityTrace: 0
   }
+}*/
+
+module webhookModule './webhook.bicep' = {
+  name: 'WebhookDeployment'
+  params: {
+    location: location
+  }
 }
 
 resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
@@ -422,16 +415,15 @@ resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
       {
         name: 'scalein'
         useCommonAlertSchema: false
-        automationAccountId: automationAccount.id
+        automationAccountId: webhookModule.outputs.automationAccountId
         runbookName: 'testscalein'
-        webhookResourceId: runbookWebhook.id
+        webhookResourceId: webhookModule.outputs.webhookId
         isGlobalRunbook: false
-        serviceUri: runbookWebhook.properties.uri
+        serviceUri: webhookModule.outputs.webhookUri
       }
     ]
   }
 }
-
 
 // Crear regla de alerta en Azure Monitor
 resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
@@ -479,5 +471,3 @@ resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2020-10-01
     enabled: true
   }
 }
-
-output uriWebhook string = runbookWebhook.properties.uri

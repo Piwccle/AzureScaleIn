@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.34.44.8038",
-      "templateHash": "6647455033781577396"
+      "templateHash": "13125458713608816294"
     }
   },
   "parameters": {
@@ -19,6 +19,15 @@
     "vmSize": {
       "type": "string",
       "defaultValue": "Standard_B2s"
+    },
+    "webhookUri": {
+      "type": "string"
+    },
+    "webhookId": {
+      "type": "string"
+    },
+    "automationAccountId": {
+      "type": "string"
     }
   },
   "variables": {
@@ -60,8 +69,7 @@
           ]
         }
       }
-    },
-    "expiryTime": "2035-03-30T00:00:00Z"
+    }
   },
   "resources": [
     {
@@ -306,70 +314,6 @@
       ]
     },
     {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "name": "[guid('roleAutomationContributorAssignmentAutomationAccount')]",
-      "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f353d9bd-d4a6-484e-a77a-8050b599b867')]",
-        "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount'), '2023-11-01', 'full').identity.principalId]",
-        "principalType": "ServicePrincipal"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
-      ]
-    },
-    {
-      "type": "Microsoft.Automation/automationAccounts",
-      "apiVersion": "2023-11-01",
-      "name": "myautomationaccount",
-      "location": "[variables('location')]",
-      "identity": {
-        "type": "SystemAssigned"
-      },
-      "properties": {
-        "publicNetworkAccess": true,
-        "disableLocalAuth": false,
-        "sku": {
-          "name": "Basic"
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Automation/automationAccounts/webhooks",
-      "apiVersion": "2015-10-31",
-      "name": "[format('{0}/{1}', 'myautomationaccount', format('Alert{0}', variables('expiryTime')))]",
-      "properties": {
-        "expiryTime": "[variables('expiryTime')]",
-        "isEnabled": true,
-        "runbook": {
-          "name": "testscalein"
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
-        "[resourceId('Microsoft.Automation/automationAccounts/runbooks', 'myautomationaccount', 'testscalein')]"
-      ]
-    },
-    {
-      "type": "Microsoft.Automation/automationAccounts/runbooks",
-      "apiVersion": "2023-11-01",
-      "name": "[format('{0}/{1}', 'myautomationaccount', 'testscalein')]",
-      "location": "westeurope",
-      "properties": {
-        "publishContentLink": {
-          "uri": "https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1",
-          "version": "1.0.0.0"
-        },
-        "runbookType": "PowerShell72",
-        "logVerbose": true,
-        "logProgress": true,
-        "logActivityTrace": 0
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
-      ]
-    },
-    {
       "type": "Microsoft.Insights/actionGroups",
       "apiVersion": "2023-01-01",
       "name": "actiongrouptest",
@@ -381,18 +325,14 @@
           {
             "name": "scalein",
             "useCommonAlertSchema": false,
-            "automationAccountId": "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
+            "automationAccountId": "[parameters('automationAccountId')]",
             "runbookName": "testscalein",
-            "webhookResourceId": "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', format('Alert{0}', variables('expiryTime')))]",
+            "webhookResourceId": "[parameters('webhookId')]",
             "isGlobalRunbook": false,
-            "serviceUri": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', format('Alert{0}', variables('expiryTime'))), '2015-10-31').uri]"
+            "serviceUri": "[parameters('webhookUri')]"
           }
         ]
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]",
-        "[resourceId('Microsoft.Automation/automationAccounts/webhooks', 'myautomationaccount', format('Alert{0}', variables('expiryTime')))]"
-      ]
+      }
     },
     {
       "type": "Microsoft.Insights/activityLogAlerts",
@@ -444,6 +384,118 @@
         "[resourceId('Microsoft.Insights/actionGroups', 'actiongrouptest')]",
         "[resourceId('Microsoft.Compute/virtualMachineScaleSets', 'myScaleSet')]"
       ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "WebhookDeployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[variables('location')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.34.44.8038",
+              "templateHash": "14767061952965569262"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "expiryTime": "2035-03-30T00:00:00Z"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid('roleAutomationContributorAssignmentAutomationAccount')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f353d9bd-d4a6-484e-a77a-8050b599b867')]",
+                "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount'), '2023-11-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Automation/automationAccounts",
+              "apiVersion": "2023-11-01",
+              "name": "myautomationaccount",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "publicNetworkAccess": true,
+                "disableLocalAuth": false,
+                "sku": {
+                  "name": "Basic"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Automation/automationAccounts/runbooks",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}/{1}', 'myautomationaccount', 'testscalein')]",
+              "location": "westeurope",
+              "properties": {
+                "publishContentLink": {
+                  "uri": "https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1",
+                  "version": "1.0.0.0"
+                },
+                "runbookType": "PowerShell72",
+                "logVerbose": true,
+                "logProgress": true,
+                "logActivityTrace": 0
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Automation/automationAccounts/webhooks",
+              "apiVersion": "2015-10-31",
+              "name": "[format('Alert{0}', variables('expiryTime'))]",
+              "properties": {
+                "expiryTime": "[variables('expiryTime')]",
+                "isEnabled": true,
+                "runbook": {
+                  "name": "testscalein"
+                },
+                "uri": ""
+              }
+            }
+          ],
+          "outputs": {
+            "webhookUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Automation/automationAccounts/webhooks', split(format('Alert{0}', variables('expiryTime')), '/')[0], split(format('Alert{0}', variables('expiryTime')), '/')[1]), '2015-10-31').uri]"
+            },
+            "webhookId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Automation/automationAccounts/webhooks', split(format('Alert{0}', variables('expiryTime')), '/')[0], split(format('Alert{0}', variables('expiryTime')), '/')[1])]"
+            },
+            "automationAccountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Automation/automationAccounts', 'myautomationaccount')]"
+            }
+          }
+        }
+      }
     }
   ]
 }
