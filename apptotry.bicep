@@ -335,19 +335,7 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
   }
 }
 
-//Crear rol para el Automation Account
-/*resource roleContributorAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('roleContributorAssignmentAutomationAccount')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      'b24988ac-6180-42a0-ab88-20f7382dd24c'
-    )
-    principalId: automationAccount.identity.principalId
-  }
-}
-
+/*
 // Crear el automation account y el runbook
 resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' = {
   name: 'myautomationaccount'
@@ -397,13 +385,29 @@ resource runbookScaleIn 'Microsoft.Automation/automationAccounts/runbooks@2023-1
     logActivityTrace: 0
   }
 }*/
-
-module webhookModule './webhook.bicep' = {
-  name: 'WebhookDeployment'
+module webhookModule './webhookdeployment.json' = {
   params: {
-    location: location
+    automationAccountName: 'myautomationaccount1234556'
+    runbookName: 'testscalein'
+    webhookName: 'webhook'
+    WebhookExpiryTime: '2035-03-30T00:00:00Z'
+    _artifactsLocation: 'https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1'
   }
+  name: 'WebhookDeployment'
 }
+
+//Crear rol para el Automation Account
+/*resource roleContributorAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('roleContributorAssignmentAutomationAccount')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    )
+    principalId: webhookModule.outputs.automationAccountPrincipalId
+  }
+}*/
 
 resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'actiongrouptest'
@@ -428,7 +432,7 @@ resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
 // Crear regla de alerta en Azure Monitor
 resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2020-10-01' = {
   name: 'ScaleInAlertRule'
-  location: location
+  location: 'global'
   properties: {
     scopes: [
       openviduScaleSetMediaNode.id
