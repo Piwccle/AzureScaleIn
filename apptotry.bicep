@@ -4,8 +4,6 @@ param adminUsername string = 'sergio'
 param sshkey string
 param vmSize string = 'Standard_B2s'
 
-//var deploymentUser = az.deployer().objectId
-
 resource vmVnet 'Microsoft.Network/virtualNetworks@2021-02-01' = {
   name: 'myVnet'
   location: location
@@ -335,56 +333,6 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
   }
 }
 
-/*
-// Crear el automation account y el runbook
-resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' = {
-  name: 'myautomationaccount'
-  location: location
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    publicNetworkAccess: true
-    disableLocalAuth: false
-    sku: {
-      name: 'Basic'
-    }
-  }
-}
-
-var expiryTime = '2035-03-30T00:00:00Z'
-
-/*resource runbookWebhook 'Microsoft.Automation/automationAccounts/webhooks@2015-10-31' = {
-  parent: automationAccount
-  name: 'Alert${expiryTime}'
-  properties: {
-    expiryTime: expiryTime
-    isEnabled: true
-    runbook: {
-      name: 'testscalein'
-    }
-    uri: ''
-  }
-  dependsOn: [
-    runbookScaleIn
-  ]
-}
-  
-resource runbookScaleIn 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
-  parent: automationAccount
-  name: 'testscalein'
-  location: 'westeurope'
-  properties: {
-    publishContentLink: {
-      uri: 'https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1'
-      version: '1.0.0.0'
-    }
-    runbookType: 'PowerShell72'
-    logVerbose: true
-    logProgress: true
-    logActivityTrace: 0
-  }
-}*/
 module webhookModule './webhookdeployment.json' = {
   params: {
     automationAccountName: 'myautomationaccount1234556'
@@ -395,19 +343,6 @@ module webhookModule './webhookdeployment.json' = {
   }
   name: 'WebhookDeployment'
 }
-
-//Crear rol para el Automation Account
-/*resource roleContributorAssignmentAutomationAccount 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('roleContributorAssignmentAutomationAccount')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      'b24988ac-6180-42a0-ab88-20f7382dd24c'
-    )
-    principalId: webhookModule.outputs.automationAccountPrincipalId
-  }
-}*/
 
 resource actionGroupScaleIn 'Microsoft.Insights/actionGroups@2023-01-01' = {
   name: 'actiongrouptest'
