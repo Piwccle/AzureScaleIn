@@ -27,7 +27,7 @@
             }
         },
         "_artifactsLocation": {
-            "defaultValue": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.automation/101-automation/",
+            "defaultValue": "https://raw.githubusercontent.com/Piwccle/AzureScaleIn/refs/heads/main/scaleInRunbook.ps1",
             "type": "String",
             "metadata": {
                 "description": "URI to artifacts location"
@@ -60,7 +60,6 @@
                     "properties": {
                         "runbookType": "PowerShell72",
                         "logProgress": "true",
-                        "logVerbose": "true",
                         "description": "Scale In Runbook",
                         "publishContentLink": {
                             "uri": "[parameters('_artifactsLocation')]",

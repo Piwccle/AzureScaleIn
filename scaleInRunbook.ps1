@@ -78,14 +78,22 @@ foreach ($Instance in $InstancesInVMSS) {
     }
 }
 "Done checking"
+
+"Checking if theres more than 1 instance in the VMSS"
+$InstanceCount = $InstancesInVMSS.Count
+if ($InstanceCount -le 1) {
+    "There is only one instance in the VMSS. Exiting..."
+    exit 1  # Exit the script if there is only one instance
+}
+
 # Check the tags in the VMSS to see if there is a tag with value TERMINATING
+"Checking TAG for TERMINATING"
 $VMSS = Get-AzVmss -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
 if($VMSS.Tags.Values -contains "TERMINATING"){
     "Found 'TERMINATING' tag so this runbook will not execute."
     exit 1
 }
-
-"Changing TAG"
+"Terminating not found changing TAG"
 $VMSS.Tags["STATUS"] = "TERMINATING"
 Set-AzResource -ResourceId $VMSS.Id -Tag $VMSS.Tags -Force
 "TAG updated"
@@ -98,4 +106,4 @@ $InstanceId = $InstancesInVMSS[0].InstanceId
 Invoke-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $InstanceId -CommandId 'RunShellScript' -ScriptString 'sudo /usr/local/bin/stop_media_node.sh'
 "Run command send"
 
-exit
+exit 0

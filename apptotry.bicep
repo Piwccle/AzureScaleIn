@@ -99,8 +99,8 @@ az login --identity
 
 echo "Hello, I am a Media Node" > /tmp/hello.txt
 
-# Generate a random number between 100 and 200
-RANDOM_WAIT_TIME=$(( ( RANDOM % 200 )  + 100 ))
+# Generate a random number between 500 and 600
+RANDOM_WAIT_TIME=$(( ( RANDOM % 600 )  + 500 ))
 
 # Wait for the random time
 sleep $RANDOM_WAIT_TIME

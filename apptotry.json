@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.34.44.8038",
-      "templateHash": "9518290500877514036"
+      "templateHash": "2535851944787142944"
     }
   },
   "parameters": {
@@ -23,7 +23,7 @@
   },
   "variables": {
     "location": "[resourceGroup().location]",
-    "scriptTemplate": "#!/bin/bash -x\n\naz login --identity\n\necho \"Hello, I am a Media Node\" > /tmp/hello.txt\n\n# Generate a random number between 100 and 200\nRANDOM_WAIT_TIME=$(( ( RANDOM % 200 )  + 100 ))\n\n# Wait for the random time\nsleep $RANDOM_WAIT_TIME\n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nSUBSCRIPTION_ID=${subscriptionId}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\n\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\"\n\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\n",
+    "scriptTemplate": "#!/bin/bash -x\n\naz login --identity\n\necho \"Hello, I am a Media Node\" > /tmp/hello.txt\n\n# Generate a random number between 500 and 600\nRANDOM_WAIT_TIME=$(( ( RANDOM % 600 )  + 500 ))\n\n# Wait for the random time\nsleep $RANDOM_WAIT_TIME\n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nSUBSCRIPTION_ID=${subscriptionId}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\n\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\"\n\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\n",
     "scriptParams": {
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
@@ -434,7 +434,7 @@
               }
             },
             "_artifactsLocation": {
-              "defaultValue": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.automation/101-automation/",
+              "defaultValue": "https://raw.githubusercontent.com/Piwccle/AzureScaleIn/refs/heads/main/scaleInRunbook.ps1",
               "type": "String",
               "metadata": {
                 "description": "URI to artifacts location"
@@ -467,7 +467,6 @@
                   "properties": {
                     "runbookType": "PowerShell72",
                     "logProgress": "true",
-                    "logVerbose": "true",
                     "description": "Scale In Runbook",
                     "publishContentLink": {
                       "uri": "[parameters('_artifactsLocation')]",
