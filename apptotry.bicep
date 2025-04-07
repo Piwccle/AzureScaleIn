@@ -93,9 +93,11 @@ resource openviduMediaNodeNSG 'Microsoft.Network/networkSecurityGroups@2021-02-0
 var scriptTemplate = '''
 #!/bin/bash -x
 
-az login --identity
+if ! (set -o noclobber ; echo > /tmp/global.lock) ; then
+    exit 1  # the global.lock already exists
+fi
 
-echo "Hello, I am a Media Node" > /tmp/hello.txt
+az login --identity
 
 # Generate a random number between 500 and 600
 RANDOM_WAIT_TIME=$(( ( RANDOM % 600 )  + 500 ))
