@@ -79,6 +79,18 @@ foreach ($Instance in $InstancesInVMSS) {
 }
 "Done checking"
 
+$VMSS = Get-AzVmss -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
+"Checking if it was deleted a instance 5 minutes ago or less"
+$CurrentTime = Get-Date
+$TimeStampTag = $VMSS.Tags["TimeStamp"]
+$DateTag = [datetime]$TimeStampTag
+$Diff = $CurrentTime - $DateTag
+if ($Diff.TotalMinutes -le 6) {
+    Write-Output "Instance was deleted 5 minutes ago or less. Exiting..."
+    exit 1
+}
+"Done checking"
+
 "Checking if theres more than 1 instance in the VMSS"
 $InstanceCount = $InstancesInVMSS.Count
 if ($InstanceCount -le 1) {
@@ -88,7 +100,6 @@ if ($InstanceCount -le 1) {
 
 # Check the tags in the VMSS to see if there is a tag with value TERMINATING
 "Checking TAG for TERMINATING"
-$VMSS = Get-AzVmss -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
 if($VMSS.Tags.Values -contains "TERMINATING"){
     "Found 'TERMINATING' tag so this runbook will not execute."
     exit 1
