@@ -82,7 +82,7 @@ foreach ($Instance in $InstancesInVMSS) {
 $VMSS = Get-AzVmss -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
 "Checking if it was deleted a instance 5 minutes ago or less"
 $CurrentTime = Get-Date
-$TimeStampTag = $VMSS.Tags["TimeStamp"]
+$TimeStampTag = $VMSS.Tags["InstanceDeleteTime"]
 $DateTag = [datetime]$TimeStampTag
 $Diff = $CurrentTime - $DateTag
 if ($Diff.TotalMinutes -le 6) {
