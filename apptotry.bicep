@@ -42,7 +42,7 @@ resource vmNic 'Microsoft.Network/networkInterfaces@2021-02-01' = {
   }
 }
 
-resource openviduMediaNodeNSG 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
+resource vmNSG 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
   name: 'myNSG'
   location: location
   properties: {
@@ -99,8 +99,8 @@ fi
 
 az login --identity
 
-# Generate a random number between 500 and 600
-RANDOM_WAIT_TIME=$(( ( RANDOM % 600 )  + 500 ))
+# Generate a random number between 100 and 200
+RANDOM_WAIT_TIME=$(( ( RANDOM % 100 )  + 100 ))
 
 # Wait for the random time
 sleep $RANDOM_WAIT_TIME
@@ -111,8 +111,9 @@ SUBSCRIPTION_ID=${subscriptionId}
 BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | jq -r '.compute.resourceId')
 INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
 RESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-az tag update --resource-id $RESOURCE_ID --operation replace --tags "STATUS"="HEALTHY"
+az tag update --resource-id $RESOURCE_ID --operation replace --tags "STATUS"="HEALTHY" "InstanceDeleteTime"="$TIMESTAMP"
 
 az vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID
 '''
@@ -206,9 +207,14 @@ resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
+param datetime string = utcNow('u')
+
 resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@2024-07-01' = {
   name: 'myScaleSet'
   location: location
+  tags: {
+    TimeStamp: datetime
+  }
   identity: {
     type: 'SystemAssigned'
   }
@@ -264,7 +270,7 @@ resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@20
                 }
               ]
               networkSecurityGroup: {
-                id: openviduMediaNodeNSG.id
+                id: vmNSG.id
               }
             }
           }
@@ -337,7 +343,7 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
 
 module webhookModule './webhookdeployment.json' = {
   params: {
-    automationAccountName: 'myautomationaccount1234556'
+    automationAccountName: 'myautomationaccount123422556'
     runbookName: 'testscalein'
     webhookName: 'webhook'
     WebhookExpiryTime: '2035-03-30T00:00:00Z'

@@ -63,29 +63,16 @@ catch {
     throw $_.Exception
 }
 
-"Checking if one Run Command is executing"
-# Get the instances and select the index 0 instance to check if runcommand is running on it and later invoke the run command
-$InstancesInVMSS = Get-AzVmssVM -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
-
-# Iterate through each instance and check if RunCommand is still running
-foreach ($Instance in $InstancesInVMSS) {
-    $runCommandStatus = Get-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $Instance.InstanceId
-
-    # Check if the RunCommand is still running
-    if ($runCommandStatus.ProvisioningState -eq "Running") {
-        Write-Output "Instance $($Instance.InstanceId) is still running a command. Exiting..."
-        exit 1  # Exit the script if any instance is still running the command
-    }
-}
-"Done checking"
+#Get the timestamp of the event that triggered the runbook
+$EventTimestamp = [datetime]$WebhookBody.data.EventTimestamp
 
 $VMSS = Get-AzVmss -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
 "Checking if it was deleted a instance 5 minutes ago or less"
-$CurrentTime = Get-Date
+#$CurrentTime = Get-Date
 $TimeStampTag = $VMSS.Tags["InstanceDeleteTime"]
 $DateTag = [datetime]$TimeStampTag
-$Diff = $CurrentTime - $DateTag
-if ($Diff.TotalMinutes -le 6) {
+#$Diff = $CurrentTime - $DateTag
+if ($EventTimestamp -lt $DateTag) {
     Write-Output "Instance was deleted 5 minutes ago or less. Exiting..."
     exit 1
 }
@@ -106,15 +93,53 @@ if($VMSS.Tags.Values -contains "TERMINATING"){
 }
 "Terminating not found changing TAG"
 $VMSS.Tags["STATUS"] = "TERMINATING"
-Set-AzResource -ResourceId $VMSS.Id -Tag $VMSS.Tags -Force
+$job = Start-Job {
+    Set-AzResource -ResourceId $using:VMSS.Id -Tag $using:VMSS.Tags -Force
+}
+
+$completed = Wait-Job -Job $job -Timeout 20
+
+if (-not $completed) {
+    Write-Output "The tag update operation timed out"
+    Stop-Job -Job $job
+    Remove-Job -Job $job
+    exit 1
+} else {
+    Receive-Job -Job $job
+}
 "TAG updated"
 
 # If no VM has been selected previously, select the VM with instance_id 0 and tag it as TERMINATING instance
 $InstanceId = $InstancesInVMSS[0].InstanceId
 
-"Sending RunCommand"
-# Run command to let the VM begin terminating, when is done itself will deprotect and the VMSS will delete it, eliminating the tag previously associated and starting a new delete if needed.
-Invoke-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $InstanceId -CommandId 'RunShellScript' -ScriptString 'sudo /usr/local/bin/stop_media_node.sh'
-"Run command send"
+"Checking if one Run Command is executing"
+# Get the instances and select the index 0 instance to check if runcommand is running on it and later invoke the run command
+$InstancesInVMSS = Get-AzVmssVM -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
 
+# Iterate through each instance and check if RunCommand is still running
+foreach ($Instance in $InstancesInVMSS) {
+    $runCommandStatus = Get-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $Instance.InstanceId
+
+    # Check if the RunCommand is still running
+    if ($runCommandStatus.ProvisioningState -eq "Running") {
+        Write-Output "Instance $($Instance.InstanceId) is still running a command. Exiting..."
+        exit 1  # Exit the script if any instance is still running the command
+    }
+}
+"Done checking"
+
+"Sending RunCommand"
+$job = Start-Job {
+    Invoke-AzVmssVMRunCommand -ResourceGroupName $using:ResourceGroupName -VMScaleSetName $using:ResourceName -InstanceId $using:InstanceId -CommandId 'RunShellScript' -ScriptString 'sudo /usr/local/bin/stop_media_node.sh'
+}
+$completed = Wait-Job -Job $job -Timeout 60
+if (-not $completed) {
+    Write-Warning "RunCommand Send"
+    Stop-Job -Job $job
+    Remove-Job -Job $job
+} else {
+    $result = Receive-Job -Job $job
+    Write-Output "RunCommand result:"
+    $result.Value[0].Message
+}
 exit 0

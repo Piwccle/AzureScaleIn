@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.34.44.8038",
-      "templateHash": "2535851944787142944"
+      "templateHash": "9462229112165725618"
     }
   },
   "parameters": {
@@ -19,11 +19,15 @@
     "vmSize": {
       "type": "string",
       "defaultValue": "Standard_B2s"
+    },
+    "datetime": {
+      "type": "string",
+      "defaultValue": "[utcNow('u')]"
     }
   },
   "variables": {
     "location": "[resourceGroup().location]",
-    "scriptTemplate": "#!/bin/bash -x\n\naz login --identity\n\necho \"Hello, I am a Media Node\" > /tmp/hello.txt\n\n# Generate a random number between 500 and 600\nRANDOM_WAIT_TIME=$(( ( RANDOM % 600 )  + 500 ))\n\n# Wait for the random time\nsleep $RANDOM_WAIT_TIME\n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nSUBSCRIPTION_ID=${subscriptionId}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\n\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\"\n\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\n",
+    "scriptTemplate": "#!/bin/bash -x\n\nif ! (set -o noclobber ; echo > /tmp/global.lock) ; then\n    exit 1  # the global.lock already exists\nfi\n\naz login --identity\n\n# Generate a random number between 100 and 200\nRANDOM_WAIT_TIME=$(( ( RANDOM % 100 )  + 100 ))\n\n# Wait for the random time\nsleep $RANDOM_WAIT_TIME\n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nSUBSCRIPTION_ID=${subscriptionId}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\nTIMESTAMP=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")\n\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\" \"InstanceDeleteTime\"=\"$TIMESTAMP\"\n\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\n",
     "scriptParams": {
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
@@ -172,6 +176,9 @@
       "apiVersion": "2024-07-01",
       "name": "myScaleSet",
       "location": "[variables('location')]",
+      "tags": {
+        "TimeStamp": "[parameters('datetime')]"
+      },
       "identity": {
         "type": "SystemAssigned"
       },
@@ -390,7 +397,7 @@
         "mode": "Incremental",
         "parameters": {
           "automationAccountName": {
-            "value": "myautomationaccount1234556"
+            "value": "myautomationaccount123422556"
           },
           "runbookName": {
             "value": "testscalein"
