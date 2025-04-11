@@ -113,7 +113,7 @@ INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
 RESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-az tag update --resource-id $RESOURCE_ID --operation replace --tags "STATUS"="HEALTHY" "InstanceDeleteTime"="$TIMESTAMP"
+az tag update --resource-id $RESOURCE_ID --operation replace --tags "STATUS"="HEALTHY" "InstanceDeleteTime"="$TIMESTAMP" "storageAccount"="${storageAccountName}"
 
 az vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID
 '''
@@ -122,6 +122,7 @@ var scriptParams = {
   subscriptionId: subscription().subscriptionId
   resourceGroupName: resourceGroup().name
   vmScaleSetName: 'myScaleSet'
+  storageAccountName: storageAccount.name
 }
 
 var script = reduce(
@@ -137,6 +138,7 @@ var userDataParams = {
   subscriptionId: subscription().subscriptionId
   resourceGroupName: resourceGroup().name
   vmScaleSetName: 'myScaleSet'
+  storageAccountName: storageAccount.name
 }
 
 var userdataTemplate = '''
@@ -148,7 +150,7 @@ echo ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh
 chmod +x /usr/local/bin/stop_media_node.sh
 
 apt-get update && apt-get install -y 
-apt-get install -y unzip && apt-get install -y stress && apt-get install -y jq
+apt-get install -y stress && apt-get install -y jq
 
 # Install azure cli
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
@@ -161,6 +163,10 @@ BEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy "*" "http://169.254.169.254
 INSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')
 
 az vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true
+
+set +e
+az storage blob upload --account-name ${storageAccountName} --container-name automation-locks --name lock.txt --file /dev/null --auth-mode key
+set -e
 
 stress --cpu 2 --timeout 600s
 '''
@@ -196,7 +202,7 @@ var mediaNodeVMSettings = {
 }
 
 resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('roleAssignmentForScaleSet')
+  name: guid('roleAssignmentForScaleSet${openviduScaleSetMediaNode.name}')
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -213,7 +219,8 @@ resource openviduScaleSetMediaNode 'Microsoft.Compute/virtualMachineScaleSets@20
   name: 'myScaleSet'
   location: location
   tags: {
-    TimeStamp: datetime
+    InstanceDeleteTime: datetime
+    storageAccount: storageAccount.name
   }
   identity: {
     type: 'SystemAssigned'
@@ -343,11 +350,11 @@ resource openviduAutoScaleSettings 'Microsoft.Insights/autoscaleSettings@2022-10
 
 module webhookModule './webhookdeployment.json' = {
   params: {
-    automationAccountName: 'myautomationaccount123422556'
+    automationAccountName: 'myautomationaccount12342222556'
     runbookName: 'testscalein'
     webhookName: 'webhook'
     WebhookExpiryTime: '2035-03-30T00:00:00Z'
-    _artifactsLocation: 'https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1'
+    _artifactsLocation: 'https://raw.githubusercontent.com/Piwccle/AzureScaleIn/refs/heads/main/scaleInRunbook.ps1'
   }
   name: 'WebhookDeployment'
 }
@@ -416,5 +423,26 @@ resource scaleInActivityLogRule 'Microsoft.Insights/activityLogAlerts@2020-10-01
       ]
     }
     enabled: true
+  }
+}
+
+// Create a storage account
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: 'lockstorage${uniqueString(resourceGroup().id)}'
+  location: resourceGroup().location
+  sku: {
+    name: 'Standard_LRS'
+  }
+  kind: 'StorageV2'
+  properties: {
+    accessTier: 'Cool'
+    supportsHttpsTrafficOnly: true
+  }
+}
+
+resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  name: '${storageAccount.name}/default/automation-locks'
+  properties: {
+    publicAccess: 'None'
   }
 }

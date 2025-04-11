@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.34.44.8038",
-      "templateHash": "9462229112165725618"
+      "templateHash": "5770041948390586765"
     }
   },
   "parameters": {
@@ -27,11 +27,12 @@
   },
   "variables": {
     "location": "[resourceGroup().location]",
-    "scriptTemplate": "#!/bin/bash -x\n\nif ! (set -o noclobber ; echo > /tmp/global.lock) ; then\n    exit 1  # the global.lock already exists\nfi\n\naz login --identity\n\n# Generate a random number between 100 and 200\nRANDOM_WAIT_TIME=$(( ( RANDOM % 100 )  + 100 ))\n\n# Wait for the random time\nsleep $RANDOM_WAIT_TIME\n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nSUBSCRIPTION_ID=${subscriptionId}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\nTIMESTAMP=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")\n\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\" \"InstanceDeleteTime\"=\"$TIMESTAMP\"\n\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\n",
+    "scriptTemplate": "#!/bin/bash -x\n\nif ! (set -o noclobber ; echo > /tmp/global.lock) ; then\n    exit 1  # the global.lock already exists\nfi\n\naz login --identity\n\n# Generate a random number between 100 and 200\nRANDOM_WAIT_TIME=$(( ( RANDOM % 100 )  + 100 ))\n\n# Wait for the random time\nsleep $RANDOM_WAIT_TIME\n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nSUBSCRIPTION_ID=${subscriptionId}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\nRESOURCE_ID=/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Compute/virtualMachineScaleSets/$VM_SCALE_SET_NAME\nTIMESTAMP=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")\n\naz tag update --resource-id $RESOURCE_ID --operation replace --tags \"STATUS\"=\"HEALTHY\" \"InstanceDeleteTime\"=\"$TIMESTAMP\" \"storageAccount\"=\"${storageAccountName}\"\n\naz vmss delete-instances --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-ids $INSTANCE_ID\n",
     "scriptParams": {
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
-      "vmScaleSetName": "myScaleSet"
+      "vmScaleSetName": "myScaleSet",
+      "storageAccountName": "[format('lockstorage{0}', uniqueString(resourceGroup().id))]"
     },
     "script": "[reduce(items(variables('scriptParams')), createObject('value', variables('scriptTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
     "base64script": "[base64(variables('script'))]",
@@ -39,9 +40,10 @@
       "base64script": "[variables('base64script')]",
       "subscriptionId": "[subscription().subscriptionId]",
       "resourceGroupName": "[resourceGroup().name]",
-      "vmScaleSetName": "myScaleSet"
+      "vmScaleSetName": "myScaleSet",
+      "storageAccountName": "[format('lockstorage{0}', uniqueString(resourceGroup().id))]"
     },
-    "userdataTemplate": "#!/bin/bash -x\nset -u -o pipefail\n\n# Introduce the scripts in the instance\necho ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh\nchmod +x /usr/local/bin/stop_media_node.sh\n\napt-get update && apt-get install -y \napt-get install -y unzip && apt-get install -y stress && apt-get install -y jq\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\naz login --identity \n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\naz vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\n\nstress --cpu 2 --timeout 600s\n",
+    "userdataTemplate": "#!/bin/bash -x\nset -u -o pipefail\n\n# Introduce the scripts in the instance\necho ${base64script} | base64 -d > /usr/local/bin/stop_media_node.sh\nchmod +x /usr/local/bin/stop_media_node.sh\n\napt-get update && apt-get install -y \napt-get install -y stress && apt-get install -y jq\n\n# Install azure cli\ncurl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n\naz login --identity \n\nRESOURCE_GROUP_NAME=${resourceGroupName}\nVM_SCALE_SET_NAME=${vmScaleSetName}\nBEFORE_INSTANCE_ID=$(curl -H Metadata:true --noproxy \"*\" \"http://169.254.169.254/metadata/instance?api-version=2021-02-01\" | jq -r '.compute.resourceId')\nINSTANCE_ID=$(echo $BEFORE_INSTANCE_ID | awk -F'/' '{print $NF}')\n\naz vmss update --resource-group $RESOURCE_GROUP_NAME --name $VM_SCALE_SET_NAME --instance-id $INSTANCE_ID --protect-from-scale-in true\n\nset +e\naz storage blob upload --account-name ${storageAccountName} --container-name automation-locks --name lock.txt --file /dev/null --auth-mode key\nset -e\n\nstress --cpu 2 --timeout 600s\n",
     "userData": "[reduce(items(variables('userDataParams')), createObject('value', variables('userdataTemplate')), lambda('curr', 'next', createObject('value', replace(lambdaVariables('curr').value, format('${{{0}}}', lambdaVariables('next').key), lambdaVariables('next').value)))).value]",
     "base64userdata": "[base64(variables('userData'))]",
     "mediaNodeVMSettings": {
@@ -162,7 +164,7 @@
     {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
-      "name": "[guid('roleAssignmentForScaleSet')]",
+      "name": "[guid(format('roleAssignmentForScaleSet{0}', 'myScaleSet'))]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
         "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachineScaleSets', 'myScaleSet'), '2024-07-01', 'full').identity.principalId]"
@@ -177,7 +179,8 @@
       "name": "myScaleSet",
       "location": "[variables('location')]",
       "tags": {
-        "TimeStamp": "[parameters('datetime')]"
+        "InstanceDeleteTime": "[parameters('datetime')]",
+        "storageAccount": "[format('lockstorage{0}', uniqueString(resourceGroup().id))]"
       },
       "identity": {
         "type": "SystemAssigned"
@@ -244,6 +247,7 @@
         }
       },
       "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', format('lockstorage{0}', uniqueString(resourceGroup().id)))]",
         "[resourceId('Microsoft.Network/networkSecurityGroups', 'myNSG')]",
         "[resourceId('Microsoft.Network/virtualNetworks', 'myVnet')]"
       ]
@@ -387,6 +391,31 @@
       ]
     },
     {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[format('lockstorage{0}', uniqueString(resourceGroup().id))]",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "accessTier": "Cool",
+        "supportsHttpsTrafficOnly": true
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/default/automation-locks', format('lockstorage{0}', uniqueString(resourceGroup().id)))]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', format('lockstorage{0}', uniqueString(resourceGroup().id)))]"
+      ]
+    },
+    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",
       "name": "WebhookDeployment",
@@ -397,7 +426,7 @@
         "mode": "Incremental",
         "parameters": {
           "automationAccountName": {
-            "value": "myautomationaccount123422556"
+            "value": "myautomationaccount12342222556"
           },
           "runbookName": {
             "value": "testscalein"
@@ -409,7 +438,7 @@
             "value": "2035-03-30T00:00:00Z"
           },
           "_artifactsLocation": {
-            "value": "https://raw.githubusercontent.com/Piwccle/scaleInRunBook/refs/heads/main/scaleInRunbook.ps1"
+            "value": "https://raw.githubusercontent.com/Piwccle/AzureScaleIn/refs/heads/main/scaleInRunbook.ps1"
           }
         },
         "template": {
@@ -502,7 +531,7 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "name": "[guid('roleAutomationContributorAssignmentAutomationAccount')]",
+              "name": "[guid(format('roleAutomationContributorAssignmentAutomationAccount{0}', parameters('automationAccountName')))]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
                 "principalId": "[reference(resourceId('Microsoft.Automation/automationAccounts', parameters('automationAccountName')), '2023-11-01', 'full').identity.principalId]",
