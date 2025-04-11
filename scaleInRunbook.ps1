@@ -29,11 +29,11 @@ if (!($schemaId -eq "Microsoft.Insights/activityLogs")) {
     exit 1
 }
 
-
 # This is the Activity Log Alert schema
 $AlertContext = [object] (($WebhookBody.data).context).activityLog
 $ResourceGroupName = $AlertContext.resourceGroupName
 $ResourceType = $AlertContext.resourceType
+$SubscriptionId = $AlertContext.subscriptionId
 $ResourceName = (($AlertContext.resourceId).Split("/"))[-1]
 $status = ($WebhookBody.data).status
 
@@ -63,83 +63,104 @@ catch {
     throw $_.Exception
 }
 
-#Get the timestamp of the event that triggered the runbook
-$EventTimestamp = [datetime]$WebhookBody.data.EventTimestamp
+#################################################################################################################
+#Here the runbook is logged in azure and nothing else is done
+#################################################################################################################
 
+
+######################################## LOCK ##########################################
+Import-Module Az.Storage
 $VMSS = Get-AzVmss -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
-"Checking if it was deleted a instance 5 minutes ago or less"
-#$CurrentTime = Get-Date
-$TimeStampTag = $VMSS.Tags["InstanceDeleteTime"]
-$DateTag = [datetime]$TimeStampTag
-#$Diff = $CurrentTime - $DateTag
-if ($EventTimestamp -lt $DateTag) {
-    Write-Output "Instance was deleted 5 minutes ago or less. Exiting..."
-    exit 1
-}
-"Done checking"
+$StorageAccountName = $VMSS.Tags["storageAccount"]
+$StorageAccountKey = (Get-AzStorageAccountKey -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName)[0].Value
+$Context = New-AzStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageAccountKey
+#$blob = Get-AzureStorageBlob -Context $storageContext -Container  $ContainerName -Blob $BlobName -ErrorAction Stop         
+#$leaseStatus = $blob.ICloudBlob.Properties.LeaseStatus;
+#If($leaseStatus -eq "Locked")
+#{
+#     $blob.ICloudBlob.BreakLease()
+#     Write-Host "Successfully broken lease on '$BlobName' blob."
+#}
+$Lease = New-AzStorageBlobLease -Blob "lock.txt" -Container "automation-locks" -Context $Context -LeaseDuration 120 -ErrorAction SilentlyContinue
 
-"Checking if theres more than 1 instance in the VMSS"
-$InstanceCount = $InstancesInVMSS.Count
-if ($InstanceCount -le 1) {
-    "There is only one instance in the VMSS. Exiting..."
-    exit 1  # Exit the script if there is only one instance
-}
-
-# Check the tags in the VMSS to see if there is a tag with value TERMINATING
-"Checking TAG for TERMINATING"
-if($VMSS.Tags.Values -contains "TERMINATING"){
-    "Found 'TERMINATING' tag so this runbook will not execute."
-    exit 1
-}
-"Terminating not found changing TAG"
-$VMSS.Tags["STATUS"] = "TERMINATING"
-$job = Start-Job {
-    Set-AzResource -ResourceId $using:VMSS.Id -Tag $using:VMSS.Tags -Force
+if (-not $Lease.LeaseId) {
+    Write-Output "Lock is already held. Exiting."
+    exit 0
 }
 
-$completed = Wait-Job -Job $job -Timeout 20
+try
+{
+    ######################################## CHECKS ##########################################
 
-if (-not $completed) {
-    Write-Output "The tag update operation timed out"
-    Stop-Job -Job $job
-    Remove-Job -Job $job
-    exit 1
-} else {
-    Receive-Job -Job $job
-}
-"TAG updated"
+    #Get the timestamp of the event that triggered the runbook
+    $EventTimestamp = $WebhookBody.data.context.activityLog.eventTimestamp
 
-# If no VM has been selected previously, select the VM with instance_id 0 and tag it as TERMINATING instance
-$InstanceId = $InstancesInVMSS[0].InstanceId
+    $DateTag = [datetime]$VMSS.Tags["InstanceDeleteTime"]
+    $DateEventTimestamp = [datetime]$EventTimeStamp
 
-"Checking if one Run Command is executing"
-# Get the instances and select the index 0 instance to check if runcommand is running on it and later invoke the run command
-$InstancesInVMSS = Get-AzVmssVM -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
-
-# Iterate through each instance and check if RunCommand is still running
-foreach ($Instance in $InstancesInVMSS) {
-    $runCommandStatus = Get-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $Instance.InstanceId
-
-    # Check if the RunCommand is still running
-    if ($runCommandStatus.ProvisioningState -eq "Running") {
-        Write-Output "Instance $($Instance.InstanceId) is still running a command. Exiting..."
-        exit 1  # Exit the script if any instance is still running the command
+    "Checking if the event was launched before the last instance was deleted"
+    if ($DateEventTimestamp -lt $DateTag) {
+        Write-Output "The event was launched before the last instance was deleted. Exiting..."
+        exit 1
     }
-}
-"Done checking"
+    "Done checking"
 
-"Sending RunCommand"
-$job = Start-Job {
-    Invoke-AzVmssVMRunCommand -ResourceGroupName $using:ResourceGroupName -VMScaleSetName $using:ResourceName -InstanceId $using:InstanceId -CommandId 'RunShellScript' -ScriptString 'sudo /usr/local/bin/stop_media_node.sh'
+
+    # Get the instances and select the index 0 instance to check if runcommand is running on it and later invoke the run command
+    $InstancesInVMSS = Get-AzVmssVM -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName
+    $InstanceCount = $InstancesInVMSS.Count
+
+    "Checking if theres more than 1 instance in the VMSS"
+    if ($InstanceCount -le 1) {
+        "There is only one instance in the VMSS. Exiting..."
+        exit 1  # Exit the script if there is only one instance
+    }
+
+
+    # Check the tags in the VMSS to see if there is a tag with value TERMINATING
+    "Checking TAG for TERMINATING"
+    if($VMSS.Tags.Values -contains "TERMINATING"){
+        "Found 'TERMINATING' tag so this runbook will not execute."
+        exit 1
+    }
+    
+    ######################################## MODIFIYING ##########################################
+
+    $VMSS.Tags["STATUS"] = "TERMINATING"
+    "Terminating not found changing TAG"
+    Set-AzResource -ResourceId $VMSS.Id -Tag $VMSS.Tags -Force
+    "TAG updated"
+
+    # If no VM has been selected previously, select the VM with instance_id 0 and tag it as TERMINATING instance
+    $InstanceId = $InstancesInVMSS[0].InstanceId
+
+    "Checking if one Run Command is executing"
+
+    # Iterate through each instance and check if RunCommand is still running
+    foreach ($Instance in $InstancesInVMSS) {
+        $runCommandStatus = Get-AzVmssVMRunCommand -ResourceGroupName $ResourceGroupName -VMScaleSetName $ResourceName -InstanceId $Instance.InstanceId
+
+        # Check if the RunCommand is still running
+        if ($runCommandStatus.ProvisioningState -eq "Running") {
+            Write-Output "Instance $($Instance.InstanceId) is still running a command. Exiting..."
+            exit 1  # Exit the script if any instance is still running the command
+        }
+    }
+    "Done checking"
+
+    "Sending RunCommand"
+    $Token = (Get-AzAccessToken).Token
+    $Uri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Compute/virtualMachineScaleSets/$ResourceName/virtualMachines/$InstanceId/runCommand?api-version=2021-11-01"
+
+    $Body = @{
+      commandId = 'RunShellScript'
+      script = @('sudo /usr/local/bin/stop_media_node.sh')
+    } | ConvertTo-Json -Depth 3
+
+    Invoke-RestMethod -Uri $Uri -Method POST -Headers @{ Authorization = "Bearer $Token" } -Body $Body -ContentType "application/json"
+    "RunCommand sent"
+} 
+finally 
+{
+    Stop-AzStorageBlobLease -Blob "lock.txt" -Container "automation-locks" -Context $Context -LeaseId $Lease.LeaseId
 }
-$completed = Wait-Job -Job $job -Timeout 60
-if (-not $completed) {
-    Write-Warning "RunCommand Send"
-    Stop-Job -Job $job
-    Remove-Job -Job $job
-} else {
-    $result = Receive-Job -Job $job
-    Write-Output "RunCommand result:"
-    $result.Value[0].Message
-}
-exit 0
