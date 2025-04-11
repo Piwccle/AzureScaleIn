@@ -83,7 +83,7 @@ $Context = New-AzStorageContext -StorageAccountName $StorageAccountName -Storage
 #}
 $Lease = az storage blob lease acquire -b "lock.txt" -c "automation-locks" --account-name $StorageAccountName --account-key $StorageAccountKey
 
-if (-not $Lease.LeaseId) {
+if (-not $Lease) {
     Write-Output "Lock is already held. Exiting."
     exit 0
 }
