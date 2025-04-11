@@ -81,7 +81,7 @@ $Context = New-AzStorageContext -StorageAccountName $StorageAccountName -Storage
 #     $blob.ICloudBlob.BreakLease()
 #     Write-Host "Successfully broken lease on '$BlobName' blob."
 #}
-$Lease = New-AzStorageBlobLease -Blob "lock.txt" -Container "automation-locks" -Context $Context -LeaseDuration 120 -ErrorAction SilentlyContinue
+$Lease = az storage blob lease acquire -b "lock.txt" -c "automation-locks" --account-name $StorageAccountName --account-key $StorageAccountKey
 
 if (-not $Lease.LeaseId) {
     Write-Output "Lock is already held. Exiting."
@@ -162,5 +162,5 @@ try
 } 
 finally 
 {
-    Stop-AzStorageBlobLease -Blob "lock.txt" -Container "automation-locks" -Context $Context -LeaseId $Lease.LeaseId
+    az storage blob lease release -b "lock.txt" -c "automation-locks" --account-name $StorageAccountName --account-key $StorageAccountKey --lease-id $Lease
 }
